@@ -193,6 +193,80 @@
 
 # volumes:
 #   postgres-db-volume:
+############################################
+# services:
+#   postgres:
+#     image: postgres:13
+#     environment:
+#       POSTGRES_USER: airflow
+#       POSTGRES_PASSWORD: airflow
+#       POSTGRES_DB: airflow
+#     volumes:
+#       - postgres-db-volume:/var/lib/postgresql/data
+#     healthcheck:
+#       test: ["CMD", "pg_isready", "-U", "airflow"]
+#       interval: 10s
+#       retries: 5
+#     restart: always
+
+#   airflow-webserver:
+#     build: .
+#     environment:
+#       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+#       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+#       AIRFLOW__CORE__FERNET_KEY: ''
+#       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+#       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+#     volumes:
+#       - ./dags:/opt/airflow/dags
+#       - ./logs:/opt/airflow/logs
+#       - ./data:/opt/airflow/data
+#       - ./src:/opt/airflow/src
+#       - .:/opt/airflow/project
+#     ports:
+#       - "8080:8080"
+#     command: >
+#       bash -c "airflow db migrate &&
+#                airflow users create --username admin --password admin123 --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
+#                airflow webserver"
+#     healthcheck:
+#       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+#       interval: 30s
+#       timeout: 10s
+#       retries: 5
+#     restart: always
+#     depends_on:
+#       - postgres
+
+#   airflow-scheduler:
+#     build: .
+#     environment:
+#       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+#       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+#       AIRFLOW__CORE__FERNET_KEY: ''
+#       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+#     volumes:
+#       - ./dags:/opt/airflow/dags
+#       - ./logs:/opt/airflow/logs
+#       - ./data:/opt/airflow/data
+#       - ./src:/opt/airflow/src
+#       - .:/opt/airflow/project
+#     command: scheduler
+#     healthcheck:
+#       test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob']
+#       interval: 30s
+#       timeout: 10s
+#       retries: 5
+#     restart: always
+#     depends_on:
+#       - postgres
+
+# volumes:
+#   postgres-db-volume:
+
+
+
+
 
 services:
   postgres:
@@ -217,6 +291,8 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ''
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+      # Gmail App Password for alerts
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
@@ -245,6 +321,8 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CORE__FERNET_KEY: ''
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      # Gmail App Password for alerts
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs

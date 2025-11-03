@@ -439,6 +439,48 @@ class PointInTimeDataCleaner:
 
         return df, before_stats, after_stats
 
+    # def clean_income_statement(self) -> Tuple[pd.DataFrame, Dict, Dict]:
+    #     """Clean income statement with 45-day reporting lag."""
+    #     logger.info("\n" + "="*80)
+    #     logger.info("CLEANING INCOME STATEMENT")
+    #     logger.info("="*80)
+
+    #     # Load
+    #     filepath = self.raw_dir / 'company_income_raw.csv'
+    #     df = pd.read_csv(filepath)
+    #     before_stats = self.compute_statistics(df, 'Income Statement')
+
+    #     logger.info(f"\nBEFORE CLEANING:")
+    #     logger.info(f"  Shape: {df.shape}")
+    #     logger.info(f"  Missing: {before_stats['total_missing']} ({before_stats['missing_pct']}%)")
+
+    #     # Parse date
+    #     df['Date'] = pd.to_datetime(df['Date'])
+    #     df.sort_values(['Company', 'Date'], inplace=True)
+
+    #     # Apply 45-day reporting lag
+    #     logger.info(f"\n⏰ Applying {self.REPORTING_LAGS['earnings']}-day reporting lag...")
+    #     df = self.apply_reporting_lag(df, lag_days=self.REPORTING_LAGS['earnings'])
+
+    #     # Handle nulls per company (forward fill only)
+    #     df = self.handle_nulls_no_lookahead(df, date_col='Date', group_col='Company')
+
+    #     # Remove duplicates
+    #     df = df.drop_duplicates(subset=['Date', 'Company'], keep='last')
+
+    #     after_stats = self.compute_statistics(df, 'Income Statement')
+
+    #     logger.info(f"\nAFTER CLEANING:")
+    #     logger.info(f"  Shape: {df.shape}")
+    #     logger.info(f"  Missing: {after_stats['total_missing']} ({after_stats['missing_pct']}%)")
+
+    #     output_path = self.clean_dir / 'company_income_clean.csv'
+    #     df.to_csv(output_path, index=False)
+    #     logger.info(f"\n✓ Saved to: {output_path}")
+
+    #     return df, before_stats, after_stats
+
+
     def clean_income_statement(self) -> Tuple[pd.DataFrame, Dict, Dict]:
         """Clean income statement with 45-day reporting lag."""
         logger.info("\n" + "="*80)
@@ -452,27 +494,86 @@ class PointInTimeDataCleaner:
 
         logger.info(f"\nBEFORE CLEANING:")
         logger.info(f"  Shape: {df.shape}")
+        logger.info(f"  Companies: {df['Company'].nunique() if 'Company' in df.columns else 'N/A'}")
         logger.info(f"  Missing: {before_stats['total_missing']} ({before_stats['missing_pct']}%)")
 
         # Parse date
         df['Date'] = pd.to_datetime(df['Date'])
         df.sort_values(['Company', 'Date'], inplace=True)
 
+        # ============================================================================
+        # HANDLE EPS COLUMN (was completely null in raw data - from checkpoint 1)
+        # ============================================================================
+        logger.info("\n💰 Handling EPS (Earnings Per Share) column...")
+        
+        if 'EPS' in df.columns:
+            null_count = df['EPS'].isna().sum()
+            total_rows = len(df)
+            
+            if null_count == total_rows:
+                # Completely null (expected from validation checkpoint)
+                logger.info(f"  ℹ️  EPS column is completely null ({null_count:,} rows)")
+                logger.info("      This is expected - EPS was filtered in validation checkpoint 1")
+                logger.info("      Filling with 0 as placeholder")
+                df['EPS'] = 0.0
+            elif null_count > 0:
+                # Partially null
+                logger.info(f"  ℹ️  EPS has {null_count:,} null values ({null_count/total_rows*100:.1f}%)")
+                logger.info("      Filling nulls with 0")
+                df['EPS'] = df['EPS'].fillna(0.0)
+            else:
+                # No nulls
+                logger.info("  ✅ EPS column has no null values")
+        else:
+            # Column doesn't exist at all
+            logger.warning("  ⚠️  EPS column not found in data")
+            logger.info("      Creating EPS column with value 0")
+            df['EPS'] = 0.0
+        
+        logger.info(f"  ✓ EPS handling complete - {(df['EPS'] == 0).sum():,} rows have EPS=0")
+        logger.info("      Note: EPS will be calculated in feature engineering if possible")
+        # ============================================================================
+
         # Apply 45-day reporting lag
         logger.info(f"\n⏰ Applying {self.REPORTING_LAGS['earnings']}-day reporting lag...")
+        logger.info("  Why: Earnings for Q1 (3/31) are reported ~45 days later (5/15)")
+        logger.info("  Effect: Q1 data becomes 'available' on 5/15, not 3/31")
+        
         df = self.apply_reporting_lag(df, lag_days=self.REPORTING_LAGS['earnings'])
+        
+        logger.info(f"\n  Example transformation:")
+        logger.info(f"    Q1 2020 (3/31) → Available {pd.Timestamp('2020-03-31') + pd.Timedelta(days=45)}")
+        logger.info(f"    Q2 2020 (6/30) → Available {pd.Timestamp('2020-06-30') + pd.Timedelta(days=45)}")
 
         # Handle nulls per company (forward fill only)
+        logger.info("\n🔧 Handling remaining null values (forward fill only - no look-ahead)...")
         df = self.handle_nulls_no_lookahead(df, date_col='Date', group_col='Company')
 
         # Remove duplicates
+        original_count = len(df)
         df = df.drop_duplicates(subset=['Date', 'Company'], keep='last')
+        if len(df) < original_count:
+            logger.info(f"  ℹ️  Removed {original_count - len(df):,} duplicate rows")
 
         after_stats = self.compute_statistics(df, 'Income Statement')
 
         logger.info(f"\nAFTER CLEANING:")
         logger.info(f"  Shape: {df.shape}")
+        logger.info(f"  Companies: {df['Company'].nunique()}")
         logger.info(f"  Missing: {after_stats['total_missing']} ({after_stats['missing_pct']}%)")
+        logger.info(f"  Date range: {df['Date'].min()} to {df['Date'].max()}")
+
+        # EPS summary statistics
+        if 'EPS' in df.columns:
+            eps_zero_count = (df['EPS'] == 0).sum()
+            eps_nonzero_count = (df['EPS'] != 0).sum()
+            logger.info(f"\n  EPS Summary:")
+            logger.info(f"    Zero values:     {eps_zero_count:,} ({eps_zero_count/len(df)*100:.1f}%)")
+            logger.info(f"    Non-zero values: {eps_nonzero_count:,} ({eps_nonzero_count/len(df)*100:.1f}%)")
+            if eps_nonzero_count > 0:
+                eps_nonzero = df[df['EPS'] != 0]['EPS']
+                logger.info(f"    Range (non-zero): {eps_nonzero.min():.2f} to {eps_nonzero.max():.2f}")
+                logger.info(f"    Mean (non-zero):  {eps_nonzero.mean():.2f}")
 
         output_path = self.clean_dir / 'company_income_clean.csv'
         df.to_csv(output_path, index=False)

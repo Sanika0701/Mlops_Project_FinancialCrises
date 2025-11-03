@@ -6,4 +6,6 @@ requests==2.31.0
 scipy==1.11.1
 scikit-learn==1.3.0
 python-dotenv==1.0.0
-great-expectations==0.18.19
+#great-expectations==0.18.19
+
+great-expectations==0.17.23
