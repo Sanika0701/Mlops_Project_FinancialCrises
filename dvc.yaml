@@ -75,3 +75,5 @@ stages:
     deps:
       - src/data/step7_drift_detection.py
       - data/features/merged_features_clean.csv
+    outs:
+      - data/features/merged_features_clean_with_anomaly_flags_with_drift_flags.csv

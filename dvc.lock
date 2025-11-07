@@ -173,3 +173,8 @@ stages:
       hash: md5
       md5: db1fc188324fefd4928305a58084fdfc
       size: 12697
+    outs:
+    - path: data/features/merged_features_clean_with_anomaly_flags_with_drift_flags.csv
+      hash: md5
+      md5: 04f56b33ab1c9d8c3d944071cc965376
+      size: 344745487
