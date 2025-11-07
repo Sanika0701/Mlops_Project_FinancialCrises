@@ -484,6 +484,21 @@ fluent_datasources:
       merged_features_clean_20251103_214727_581631:
         type: dataframe
         batch_metadata: {}
+      fred_raw_20251105_150309_769787:
+        type: dataframe
+        batch_metadata: {}
+      market_raw_20251105_150309_879485:
+        type: dataframe
+        batch_metadata: {}
+      company_prices_raw_20251105_150310_019655:
+        type: dataframe
+        batch_metadata: {}
+      company_balance_raw_20251105_150310_244717:
+        type: dataframe
+        batch_metadata: {}
+      company_income_raw_20251105_150310_313403:
+        type: dataframe
+        batch_metadata: {}
 notebooks:
 include_rendered_content:
   globally: false

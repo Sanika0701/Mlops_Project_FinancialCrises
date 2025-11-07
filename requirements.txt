@@ -9,3 +9,4 @@ python-dotenv==1.0.0
 #great-expectations==0.18.19
 
 great-expectations==0.17.23
+gcloud

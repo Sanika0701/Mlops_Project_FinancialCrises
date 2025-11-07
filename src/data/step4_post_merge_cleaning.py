@@ -835,7 +835,6 @@ class PostMergeDataCleaner:
         logger.info("\n✅ Step 3c Complete!")
         logger.info("\n➡️  Next Steps:")
         logger.info("   1. (Optional) Validate: python src/validation/validate_checkpoint_4_clean_merged.py")
-        logger.info("   2. Create interaction features: python step3b_interaction_features.py")
 
         return all_stats
 
@@ -850,7 +849,7 @@ def main():
         
         if stats:
             logger.info("\n" + "="*80)
-            logger.info("✅ STEP 3c SUCCESSFULLY COMPLETED")
+            logger.info("✅ STEP 4 SUCCESSFULLY COMPLETED")
             logger.info("="*80)
             return stats
         else:
