@@ -55,17 +55,23 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install dependencies
+      - name: Install DVC with GCS support
         run: |
           pip install --upgrade pip wheel setuptools
           pip install -r requirements.txt
           pip install dvc dvc-gs
 
-      - name: DVC Pull
-        run: dvc pull
+      - name: Authenticate GCP + Pull DVC data
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp_key.json
+        run: |
+          echo "${{ secrets.GCP_SA_KEY }}" > /tmp/gcp_key.json
+          chmod 600 /tmp/gcp_key.json
+          dvc pull
 
       - name: DVC Pipeline Integrity Check
         run: dvc repro --dry-run
+
 
 
   validation-checkpoints:
