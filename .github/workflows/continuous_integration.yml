@@ -10,6 +10,7 @@ on:
       - "dags/**"
       - "dvc.yaml"
       - "requirements.txt"
+      - ".github/workflows/continuous_integration.yml"
       
   workflow_dispatch:
     inputs:
@@ -83,7 +84,7 @@ jobs:
         run: |
           pip install --upgrade pip wheel setuptools
           pip install -r requirements.txt
-          pip install dvc[s3]  # crucial for pulling from GCP
+          pip install dvc dvc-gs  # crucial for pulling from GCP
 
       - name: Configure GCP Credentials
         env:
