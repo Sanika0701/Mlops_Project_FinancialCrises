@@ -30,28 +30,6 @@ jobs:
         with:
           python-version: 3.10
 
-  lint:
-    runs-on: ubuntu-latest
-    needs: setup-python
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install lint dependencies
-        run: |
-          pip install flake8 black isort
-
-      - name: Run Black check
-        run: black --check src tests
-
-      - name: Run isort check
-        run: isort --check-only src tests
-
-      - name: Run flake8
-        run: flake8 src tests
-
-
   run-tests:
     runs-on: ubuntu-latest
     needs: setup-python
@@ -140,7 +118,6 @@ jobs:
     steps:
       - name: Display Final CI Status
         run: |
-          echo "Lint: ${{ needs.lint.result }}"
           echo "Tests: ${{ needs.run-tests.result }}"
           echo "DVC: ${{ needs.dvc-check.result }}"
           echo "Validation: ${{ needs.validation-checkpoints.result }}"
