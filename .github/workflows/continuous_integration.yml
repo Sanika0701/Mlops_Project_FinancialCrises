@@ -49,7 +49,7 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp_key.json
         run: |
-          echo "${{ secrets.GCP_SA_KEY }}" > /tmp/gcp_key.json
+          echo "${{ secrets.GCP_SA_KEY_BACKUP }}" > /tmp/gcp_key.json
           chmod 600 /tmp/gcp_key.json
       
       - name: Debug key file
@@ -81,7 +81,7 @@ jobs:
 
       - name: Configure GCP Credentials
         run: |
-          echo "${{ secrets.GCP_SA_KEY }}" > /tmp/gcp_key.json
+          echo "${{ secrets.GCP_SA_KEY_BACKUP }}" > /tmp/gcp_key.json
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp_key.json   # <--- FIXED
 
