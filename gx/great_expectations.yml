@@ -1165,6 +1165,15 @@ fluent_datasources:
       fred_clean_20251114_161159_558694:
         type: dataframe
         batch_metadata: {}
+      fred_clean_20251114_202332_789102:
+        type: dataframe
+        batch_metadata: {}
+      macro_features_clean_20251114_202335_620796:
+        type: dataframe
+        batch_metadata: {}
+      merged_features_clean_20251114_202337_059209:
+        type: dataframe
+        batch_metadata: {}
 notebooks:
 include_rendered_content:
   globally: false
