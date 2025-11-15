@@ -45,26 +45,65 @@ jobs:
           pip install --upgrade pip wheel setuptools
           pip install dvc dvc-gs -r requirements.txt
 
-      - name: Create GCP credentials file
+      - name: Create and validate GCP credentials
         run: |
           echo "${{ secrets.GCP_SA_KEY }}" > /tmp/gcp_key.json
           chmod 600 /tmp/gcp_key.json
-    
-      - name: Debug key file
+          
+          # Validate JSON syntax
+          if ! python -m json.tool /tmp/gcp_key.json > /dev/null; then
+            echo "ERROR: GCP_SA_KEY is not valid JSON!"
+            exit 1
+          fi
+          
+          # Check for required fields
+          if ! grep -q '"private_key":' /tmp/gcp_key.json; then
+            echo "ERROR: private_key field missing or malformed!"
+            exit 1
+          fi
+          
+          echo "✓ Credentials file is valid JSON"
+          
+      - name: Debug - Check file exists and permissions
         run: |
-          echo "=== DEBUG: First 20 lines of /tmp/gcp_key.json ==="
-          head -n 20 /tmp/gcp_key.json
+          ls -la /tmp/gcp_key.json
+          echo "File size: $(wc -c < /tmp/gcp_key.json) bytes"
+          
+      - name: Test GCS authentication
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp_key.json
+        run: |
+          # Install gcloud SDK for testing
+          pip install google-cloud-storage
+          
+          # Test authentication with Python
+          python - <<EOF
+          from google.cloud import storage
+          import os
+          
+          print(f"Credentials file: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
+          
+          try:
+              client = storage.Client()
+              print(f"✓ Authenticated as: {client.project}")
+              
+              # Try to list buckets to verify permissions
+              buckets = list(client.list_buckets())
+              print(f"✓ Can access {len(buckets)} bucket(s)")
+          except Exception as e:
+              print(f"✗ Authentication failed: {e}")
+              exit(1)
+          EOF
 
       - name: Pull data with DVC
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp_key.json  # ✅ Set here!
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp_key.json
         run: dvc pull
 
       - name: DVC Pipeline Integrity Check
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp_key.json  # ✅ And here!
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp_key.json
         run: dvc repro --dry-run
-
 
   validation-checkpoints:
     runs-on: ubuntu-latest
