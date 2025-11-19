@@ -1,719 +1,542 @@
 """
-STEP 1: DATA CLEANING WITH POINT-IN-TIME CORRECTNESS (NO FORWARD FILL)
+COMPLETE QUARTERLY DATA PIPELINE - WITH FRED & MARKET DATA
+===========================================================
 
-This script cleans all raw data files while preserving point-in-time correctness.
+This script creates ONE ROW PER QUARTER PER COMPANY with:
+1. Quarterly fundamentals (Balance Sheet + Income Statement)  
+2. Quarterly stock price aggregates
+3. Quarterly macro aggregates (FRED: GDP, CPI, Unemployment, etc.)
+4. Quarterly market aggregates (VIX, SP500)
 
-Key Features:
-1. NO forward-fill (removed to preserve data sparsity)
-2. Apply reporting lags to quarterly financials (45 days)
-3. Detect outliers but DON'T remove (crises are real!)
-4. Per-company handling (no cross-contamination)
-5. Comprehensive before/after statistics
+Output: ONE ROW PER QUARTER PER COMPANY with all features
 
-MODIFICATIONS FOR QUARTERLY DATA:
-- Accept higher missing percentages (20-40% is normal)
-- Only fill leading NaNs with median (no ffill/bfill)
-- Adjusted for 50 companies (up from 25)
-- Date range: 1990-2025 (up from 2005-2025)
-
-Input:  data/raw/*.csv (5 files)
-Output: data/clean/*.csv (5 files)
-
-Usage:
-    python step1_data_cleaning.py
-
-Next Step:
-    python step2_feature_engineering.py
+Author: Financial ML Pipeline
+Date: 2025
 """
 
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from datetime import timedelta
 import logging
-from typing import Dict, Tuple, List
-import time
-from datetime import datetime, timedelta
-import warnings
 
-warnings.filterwarnings('ignore')
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
-class PointInTimeDataCleanerNoFFill:
-    """Clean data while preserving point-in-time correctness WITHOUT forward filling."""
-
-    # Reporting lags (days after quarter-end when data becomes available)
-    REPORTING_LAGS = {
-        'earnings': 45,      # Earnings reported ~45 days after quarter end
-        'balance_sheet': 45, # Balance sheet same as earnings
-        'macro': 30          # Macro data (GDP, CPI) ~30 days lag
-    }
-
-    def __init__(self, raw_dir: str = "data/raw", clean_dir: str = "data/clean"):
+class QuarterlyDataPipeline:
+    """Clean and merge financial data at quarterly frequency."""
+    
+    REPORTING_LAG_DAYS = 45  # Quarterly financials reported 45 days after quarter end
+    
+    def __init__(self, raw_dir='data/raw', output_dir='data/processed'):
         self.raw_dir = Path(raw_dir)
-        self.clean_dir = Path(clean_dir)
-        self.clean_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create reports directory
-        self.report_dir = Path("data/reports")
-        self.report_dir.mkdir(parents=True, exist_ok=True)
-
-    # ========== STATISTICS FUNCTIONS ==========
-
-    def compute_statistics(self, df: pd.DataFrame, name: str) -> Dict:
-        """Compute comprehensive statistics for a dataset."""
-        stats = {
-            'dataset_name': name,
-            'n_rows': len(df),
-            'n_cols': len(df.columns),
-            'memory_mb': df.memory_usage(deep=True).sum() / 1024**2,
-        }
-
-        # Date range
-        if 'Date' in df.columns:
-            # Ensure Date is datetime
-            if not pd.api.types.is_datetime64_any_dtype(df['Date']):
-                df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
-
-            stats['date_min'] = str(df['Date'].min())
-            stats['date_max'] = str(df['Date'].max())
-            stats['date_range_days'] = (df['Date'].max() - df['Date'].min()).days
-
-        # Missing values
-        missing = df.isna().sum()
-        stats['total_missing'] = missing.sum()
-        stats['missing_pct'] = round((missing.sum() / df.size) * 100, 2)
-        stats['cols_with_missing'] = (missing > 0).sum()
-
-        # Duplicates
-        if 'Date' in df.columns and 'Company' in df.columns:
-            stats['duplicates'] = df.duplicated(subset=['Date', 'Company']).sum()
-        elif 'Date' in df.columns:
-            stats['duplicates'] = df.duplicated(subset=['Date']).sum()
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+    # ========== HELPER FUNCTIONS ==========
+    
+    def get_quarter_end(self, date):
+        """Get the quarter end date for any given date."""
+        quarter = (date.month - 1) // 3 + 1
+        if quarter == 1:
+            return pd.Timestamp(year=date.year, month=3, day=31)
+        elif quarter == 2:
+            return pd.Timestamp(year=date.year, month=6, day=30)
+        elif quarter == 3:
+            return pd.Timestamp(year=date.year, month=9, day=30)
         else:
-            stats['duplicates'] = df.duplicated().sum()
-
-        # Numeric statistics
-        numeric_df = df.select_dtypes(include=[np.number])
-        if not numeric_df.empty:
-            stats['n_numeric_cols'] = len(numeric_df.columns)
-            stats['mean_value'] = numeric_df.mean().mean()
-            stats['std_value'] = numeric_df.std().mean()
-
-        # Categorical
-        categorical_df = df.select_dtypes(exclude=[np.number])
-        stats['n_categorical_cols'] = len(categorical_df.columns)
-
-        return stats
-
-    def print_statistics_comparison(self, before_stats: Dict, after_stats: Dict):
-        """Print before/after comparison in clean format."""
-        logger.info(f"\n{'='*80}")
-        logger.info(f"STATISTICS: {before_stats['dataset_name']}")
-        logger.info(f"{'='*80}")
-
-        comparisons = [
-            ('Rows', 'n_rows'),
-            ('Columns', 'n_cols'),
-            ('Memory (MB)', 'memory_mb'),
-            ('Date Range (days)', 'date_range_days'),
-            ('Total Missing Values', 'total_missing'),
-            ('Missing %', 'missing_pct'),
-            ('Columns with Missing', 'cols_with_missing'),
-            ('Duplicate Rows', 'duplicates'),
-        ]
-
-        print(f"\n{'Metric':<30} {'BEFORE':>15} {'AFTER':>15} {'Change':>15}")
-        print("-" * 75)
-
-        for label, key in comparisons:
-            before_val = before_stats.get(key, 'N/A')
-            after_val = after_stats.get(key, 'N/A')
-
-            if isinstance(before_val, (int, float)) and isinstance(after_val, (int, float)):
-                change = after_val - before_val
-                if isinstance(before_val, float):
-                    print(f"{label:<30} {before_val:>15.2f} {after_val:>15.2f} {change:>15.2f}")
-                else:
-                    print(f"{label:<30} {before_val:>15,} {after_val:>15,} {change:>15,}")
-            else:
-                print(f"{label:<30} {str(before_val):>15} {str(after_val):>15} {'':>15}")
-
-    # ========== MODIFIED: NO FORWARD FILL ==========
-
-    def handle_nulls_no_lookahead(self, df: pd.DataFrame, date_col: str = 'Date',
-                                  group_col: str = None) -> pd.DataFrame:
-        """
-        MODIFIED: Handle nulls WITHOUT forward filling.
+            return pd.Timestamp(year=date.year, month=12, day=31)
+    
+    def add_quarter_info(self, df):
+        """Add quarter information columns."""
+        df['Year'] = df['Date'].dt.year
+        df['Quarter_Num'] = df['Date'].dt.quarter
+        df['Quarter'] = df['Year'].astype(str) + 'Q' + df['Quarter_Num'].astype(str)
+        df['Quarter_End_Date'] = df['Date'].apply(self.get_quarter_end)
+        return df
+    
+    # ========== CLEANING FUNCTIONS ==========
+    
+    def clean_quarterly_fundamentals(self, df, data_type='balance'):
+        """Clean quarterly fundamental data."""
+        logger.info(f"\nCleaning {data_type.title()} Sheet...")
+        df = df.copy()
         
-        Strategy:
-        - REMOVED: ffill() - no forward propagation
-        - KEPT: Median fill for leading NaNs only
-        - RESULT: More missing data preserved
+        # Parse dates
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df.sort_values(['Company', 'Date']).reset_index(drop=True)
         
-        Rationale: Quarterly data naturally has gaps. Forward filling 
-        would create fake data points between quarters.
+        logger.info(f"  Raw shape: {df.shape}")
+        logger.info(f"  Companies: {df['Company'].nunique()}")
+        logger.info(f"  Date range: {df['Date'].min().date()} to {df['Date'].max().date()}")
         
-        Args:
-            df: DataFrame to clean
-            date_col: Date column name
-            group_col: If provided, handle nulls per group (e.g., per Company)
+        # Store original quarter end dates BEFORE applying lag
+        df = self.add_quarter_info(df)
+        df['Original_Quarter_End'] = df['Date'].copy()
+        
+        # Apply 45-day reporting lag
+        logger.info(f"  Applying {self.REPORTING_LAG_DAYS}-day reporting lag...")
+        df['Date'] = df['Date'] + pd.Timedelta(days=self.REPORTING_LAG_DAYS)
+        
+        # Handle specific columns
+        if data_type == 'balance':
+            if 'Long_Term_Debt' in df.columns:
+                for company in df['Company'].unique():
+                    mask = df['Company'] == company
+                    median_debt = df.loc[mask, 'Long_Term_Debt'].median()
+                    if not pd.isna(median_debt):
+                        df.loc[mask, 'Long_Term_Debt'] = df.loc[mask, 'Long_Term_Debt'].fillna(median_debt)
             
-        Returns:
-            Cleaned DataFrame with only leading NaNs filled
-        """
-        df = df.copy()
-        df_original = df.copy()
-
-        # Ensure date is datetime
-        if date_col in df.columns and not pd.api.types.is_datetime64_any_dtype(df[date_col]):
-            df[date_col] = pd.to_datetime(df[date_col], format='mixed', errors='coerce')
-
-        if group_col:
-            # Fill within groups (per company)
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
-
-            for col in numeric_cols:
-                # REMOVED: Forward fill
-                # df[col] = df.groupby(group_col)[col].ffill()  # ❌ DELETED
-                
-                # ONLY fill leading NaNs with group median
-                for group_name in df[group_col].unique():
-                    group_mask = df[group_col] == group_name
-                    group_data = df.loc[group_mask, col]
-
-                    if group_data.isna().any():
-                        valid_data = group_data.dropna()
-                        if len(valid_data) > 0:
-                            # Only fill leading NaNs (first N rows with no data)
-                            first_valid_idx = valid_data.index[0]
-                            
-                            # Get indices of leading nulls
-                            leading_null_indices = []
-                            for idx in group_data.index:
-                                if idx < first_valid_idx and pd.isna(group_data.loc[idx]):
-                                    leading_null_indices.append(idx)
-                            
-                            if leading_null_indices:
-                                fill_value = valid_data.head(min(10, len(valid_data))).median()
-                                df.loc[leading_null_indices, col] = fill_value
-        else:
-            # Fill entire dataset
-            df_indexed = df.set_index(date_col) if date_col in df.columns else df
-
-            # REMOVED: Forward fill
-            # df = df.ffill()  # ❌ DELETED
-
-            # ONLY fill leading NaNs
-            for col in df_indexed.columns:
-                if df_indexed[col].isna().any():
-                    valid_data = df_indexed[col].dropna()
-                    if len(valid_data) > 0:
-                        first_valid_idx = valid_data.index[0]
-                        
-                        # Get leading nulls
-                        leading_null_indices = []
-                        for idx in df_indexed.index:
-                            if idx < first_valid_idx and pd.isna(df_indexed.loc[idx, col]):
-                                leading_null_indices.append(idx)
-                        
-                        if leading_null_indices:
-                            fill_value = valid_data.head(min(10, len(valid_data))).median()
-                            df_indexed.loc[leading_null_indices, col] = fill_value
-
-            # Reset index if it was set
-            if date_col in df_indexed.index.names or df_indexed.index.name == date_col:
-                df = df_indexed.reset_index()
-            else:
-                df = df_indexed
-
-        # Log what was filled
-        filled_count = df_original.isna().sum().sum() - df.isna().sum().sum()
-        if filled_count > 0:
-            logger.info(f"  ✓ Filled {filled_count:,} leading NaNs with median (NO forward fill)")
+            if 'Total_Debt' not in df.columns:
+                if 'Long_Term_Debt' in df.columns and 'Short_Term_Debt' in df.columns:
+                    df['Total_Debt'] = df['Long_Term_Debt'].fillna(0) + df['Short_Term_Debt'].fillna(0)
         
-        # Report remaining nulls
-        remaining_nulls = df.isna().sum().sum()
-        remaining_pct = (remaining_nulls / df.size) * 100
-        logger.info(f"  ℹ️  Remaining nulls: {remaining_nulls:,} ({remaining_pct:.2f}%)")
-        logger.info(f"      This is EXPECTED with quarterly data - natural gaps preserved")
-
-        return df
-
-    # ========== POINT-IN-TIME FUNCTIONS ==========
-
-    def apply_reporting_lag(self, df: pd.DataFrame, lag_days: int,
-                           group_col: str = None) -> pd.DataFrame:
-        """
-        Apply reporting lag to quarterly data for point-in-time correctness.
-
-        Example: Q1 2020 earnings (3/31) are reported 45 days later (5/15)
-        So on any day before 5/15, we should use Q4 2019 data, not Q1 2020.
-
-        Args:
-            df: DataFrame with quarterly data
-            lag_days: Number of days after quarter-end when data is available
-            group_col: If provided, shift within groups (e.g., per Company)
-        """
-        logger.info(f"\n⏰ Applying {lag_days}-day reporting lag for point-in-time correctness...")
-
-        df = df.copy()
-
-        # Shift dates forward by reporting lag
-        df['Date'] = df['Date'] + pd.Timedelta(days=lag_days)
-
-        # Log the transformation
-        example_date = pd.Timestamp('2020-03-31')
-        example_available = example_date + pd.Timedelta(days=lag_days)
-        logger.info(f"  Example: Q1 2020 (3/31) → Available on {example_available.date()}")
-
-        return df
-
-    # ========== CLEAN INDIVIDUAL DATASETS ==========
-
-    def clean_fred(self) -> Tuple[pd.DataFrame, Dict, Dict]:
-        """Clean FRED data with point-in-time correctness."""
-        logger.info("\n" + "="*80)
-        logger.info("CLEANING FRED DATA (NO FORWARD FILL)")
-        logger.info("="*80)
-
-        # Load
-        filepath = self.raw_dir / 'fred_raw.csv'
-        df = pd.read_csv(filepath)
-        before_stats = self.compute_statistics(df, 'FRED')
-
-        logger.info(f"\nBEFORE CLEANING:")
-        logger.info(f"  Shape: {df.shape}")
-        logger.info(f"  Missing values: {df.isna().sum().sum()} ({before_stats['missing_pct']}%)")
-        logger.info(f"  Duplicates: {before_stats['duplicates']}")
-
-        # Standardize column names
-        if 'DATE' in df.columns:
-            df.rename(columns={'DATE': 'Date'}, inplace=True)
+        elif data_type == 'income':
+            if 'EPS' in df.columns:
+                null_count = df['EPS'].isna().sum()
+                if null_count > 0:
+                    logger.info(f"  Filling {null_count:,} EPS nulls with 0")
+                    df['EPS'] = df['EPS'].fillna(0.0)
         
-        df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
-        df.sort_values('Date', inplace=True)
-
-        # Handle nulls (NO forward fill)
-        df = self.handle_nulls_no_lookahead(df, date_col='Date')
-
         # Remove duplicates
-        df = df.drop_duplicates(subset=['Date'], keep='last')
-
-        # After statistics
-        after_stats = self.compute_statistics(df, 'FRED')
-
-        logger.info(f"\nAFTER CLEANING:")
-        logger.info(f"  Shape: {df.shape}")
-        logger.info(f"  Missing values: {df.isna().sum().sum()} ({after_stats['missing_pct']}%)")
-        logger.info(f"  Duplicates: {after_stats['duplicates']}")
-
-        # Save
-        output_path = self.clean_dir / 'fred_clean.csv'
-        df.to_csv(output_path, index=False)
-        logger.info(f"\n✓ Saved to: {output_path}")
-
-        return df, before_stats, after_stats
-
-    def clean_market(self) -> Tuple[pd.DataFrame, Dict, Dict]:
-        """Clean market data (real-time, no lag needed)."""
-        logger.info("\n" + "="*80)
-        logger.info("CLEANING MARKET DATA (NO FORWARD FILL)")
-        logger.info("="*80)
-
-        # Load
-        filepath = self.raw_dir / 'market_raw.csv'
-        df = pd.read_csv(filepath)
-        before_stats = self.compute_statistics(df, 'Market')
-
-        logger.info(f"\nBEFORE CLEANING:")
-        logger.info(f"  Shape: {df.shape}")
-        logger.info(f"  Missing: {before_stats['total_missing']} ({before_stats['missing_pct']}%)")
-
-        # Parse date
-        df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
-        df.sort_values('Date', inplace=True)
-
-        # Rename columns for consistency
-        if 'SP500' in df.columns:
-            df.rename(columns={'SP500': 'SP500_Close'}, inplace=True)
-
-        # Handle nulls (no reporting lag - market data is real-time)
-        logger.info("\n  Market data is real-time (no reporting lag needed)")
-        df = self.handle_nulls_no_lookahead(df, date_col='Date')
-
-        # Remove duplicates
-        df = df.drop_duplicates(subset=['Date'], keep='last')
-
-        after_stats = self.compute_statistics(df, 'Market')
-
-        logger.info(f"\nAFTER CLEANING:")
-        logger.info(f"  Shape: {df.shape}")
-        logger.info(f"  Missing: {after_stats['total_missing']} ({after_stats['missing_pct']}%)")
-
-        output_path = self.clean_dir / 'market_clean.csv'
-        df.to_csv(output_path, index=False)
-        logger.info(f"\n✓ Saved to: {output_path}")
-
-        return df, before_stats, after_stats
-
-    def clean_company_prices(self) -> Tuple[pd.DataFrame, Dict, Dict]:
-        """Clean company stock prices (real-time, no lag)."""
-        logger.info("\n" + "="*80)
-        logger.info("CLEANING COMPANY PRICES (NO FORWARD FILL)")
-        logger.info("="*80)
-
-        # Load
-        filepath = self.raw_dir / 'company_prices_raw.csv'
-        df = pd.read_csv(filepath)
-        before_stats = self.compute_statistics(df, 'Company Prices')
-
-        logger.info(f"\nBEFORE CLEANING:")
-        logger.info(f"  Shape: {df.shape}")
-        logger.info(f"  Companies: {df['Company'].nunique() if 'Company' in df.columns else 'N/A'}")
-        logger.info(f"  Missing: {before_stats['total_missing']} ({before_stats['missing_pct']}%)")
-
-        # Parse date
-        df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
-
-        # Keep needed columns, use Adj_Close (accounts for splits/dividends)
-        keep_cols = ['Date', 'Close', 'Volume', 'Company', 'Company_Name', 'Sector']
+        df = df.drop_duplicates(subset=['Date', 'Company'], keep='last')
         
-        # Check which columns exist
-        available_cols = [col for col in keep_cols if col in df.columns]
+        logger.info(f"  Final shape: {df.shape}")
+        logger.info(f"  ✓ One row per quarter per company")
         
-        # Handle Adj Close if it exists
-        if 'Adj Close' in df.columns:
-            df['Stock_Price'] = df['Adj Close']
-        elif 'Adj_Close' in df.columns:
+        return df
+    
+    def clean_quarterly_prices(self, df):
+        """Clean quarterly stock prices and calculate returns."""
+        logger.info("\nCleaning Quarterly Stock Prices...")
+        df = df.copy()
+        
+        # Parse dates
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df.sort_values(['Company', 'Date']).reset_index(drop=True)
+        
+        logger.info(f"  Raw shape: {df.shape}")
+        logger.info(f"  Companies: {df['Company'].nunique()}")
+        logger.info(f"  Date range: {df['Date'].min().date()} to {df['Date'].max().date()}")
+        
+        # Use Adj_Close
+        if 'Adj_Close' in df.columns:
             df['Stock_Price'] = df['Adj_Close']
         elif 'Close' in df.columns:
             df['Stock_Price'] = df['Close']
-        
-        # Add Stock_Price to keep list
-        if 'Stock_Price' not in available_cols:
-            available_cols.append('Stock_Price')
-        
-        # Keep only available columns
-        df = df[available_cols].copy()
-
-        # Sort
-        df.sort_values(['Company', 'Date'], inplace=True)
-
-        # Handle nulls per company (no reporting lag - prices are real-time)
-        logger.info("\n  Stock prices are real-time (no reporting lag needed)")
-        df = self.handle_nulls_no_lookahead(df, date_col='Date', group_col='Company')
-
-        # Remove duplicates
-        df = df.drop_duplicates(subset=['Date', 'Company'], keep='last')
-
-        after_stats = self.compute_statistics(df, 'Company Prices')
-
-        logger.info(f"\nAFTER CLEANING:")
-        logger.info(f"  Shape: {df.shape}")
-        logger.info(f"  Missing: {after_stats['total_missing']} ({after_stats['missing_pct']}%)")
-
-        # Per-company summary
-        logger.info(f"\n  Per-company summary:")
-        for company in sorted(df['Company'].unique())[:5]:  # Show first 5
-            company_df = df[df['Company'] == company]
-            logger.info(f"    {company}: {len(company_df):,} quarters, " +
-                       f"{company_df['Date'].min().date()} to {company_df['Date'].max().date()}")
-
-        output_path = self.clean_dir / 'company_prices_clean.csv'
-        df.to_csv(output_path, index=False)
-        logger.info(f"\n✓ Saved to: {output_path}")
-
-        return df, before_stats, after_stats
-
-    def clean_balance_sheet(self) -> Tuple[pd.DataFrame, Dict, Dict]:
-        """Clean balance sheet with 45-day reporting lag."""
-        logger.info("\n" + "="*80)
-        logger.info("CLEANING BALANCE SHEET (NO FORWARD FILL)")
-        logger.info("="*80)
-
-        # Load
-        filepath = self.raw_dir / 'company_balance_raw.csv'
-        df = pd.read_csv(filepath)
-        before_stats = self.compute_statistics(df, 'Balance Sheet')
-
-        logger.info(f"\nBEFORE CLEANING:")
-        logger.info(f"  Shape: {df.shape}")
-        logger.info(f"  Companies: {df['Company'].nunique() if 'Company' in df.columns else 'N/A'}")
-        logger.info(f"  Missing: {before_stats['total_missing']} ({before_stats['missing_pct']}%)")
-
-        # Parse date
-        df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
-        df.sort_values(['Company', 'Date'], inplace=True)
-
-        # CRITICAL: Apply 45-day reporting lag
-        logger.info(f"\n⏰ Applying {self.REPORTING_LAGS['balance_sheet']}-day reporting lag...")
-        logger.info("  Why: Balance sheets for Q1 (3/31) are filed ~45 days later (5/15)")
-        logger.info("  Effect: Q1 data becomes 'available' on 5/15, not 3/31")
-
-        df = self.apply_reporting_lag(df, lag_days=self.REPORTING_LAGS['balance_sheet'])
-
-        # Handle Long_Term_Debt - allow median fill for this critical field
-        logger.info("\n  Handling missing Long_Term_Debt...")
-        if 'Long_Term_Debt' in df.columns:
-            before_ltd = df['Long_Term_Debt'].isna().sum()
-            # Use group median (no ffill)
-            for company in df['Company'].unique():
-                mask = df['Company'] == company
-                median_debt = df.loc[mask, 'Long_Term_Debt'].median()
-                if not pd.isna(median_debt):
-                    df.loc[mask, 'Long_Term_Debt'] = df.loc[mask, 'Long_Term_Debt'].fillna(median_debt)
-            after_ltd = df['Long_Term_Debt'].isna().sum()
-            logger.info(f"    Long_Term_Debt: {before_ltd:,} → {after_ltd:,} missing")
-
-        # Calculate Total_Debt
-        if 'Long_Term_Debt' in df.columns and 'Short_Term_Debt' in df.columns:
-            df['Total_Debt'] = df['Long_Term_Debt'].fillna(0) + df['Short_Term_Debt'].fillna(0)
-
-        # Handle other nulls per company (NO forward fill)
-        df = self.handle_nulls_no_lookahead(df, date_col='Date', group_col='Company')
-
-        # Remove duplicates
-        df = df.drop_duplicates(subset=['Date', 'Company'], keep='last')
-
-        after_stats = self.compute_statistics(df, 'Balance Sheet')
-
-        logger.info(f"\nAFTER CLEANING:")
-        logger.info(f"  Shape: {df.shape}")
-        logger.info(f"  Missing: {after_stats['total_missing']} ({after_stats['missing_pct']}%)")
-
-        output_path = self.clean_dir / 'company_balance_clean.csv'
-        df.to_csv(output_path, index=False)
-        logger.info(f"\n✓ Saved to: {output_path}")
-
-        return df, before_stats, after_stats
-
-    def clean_income_statement(self) -> Tuple[pd.DataFrame, Dict, Dict]:
-        """Clean income statement with 45-day reporting lag."""
-        logger.info("\n" + "="*80)
-        logger.info("CLEANING INCOME STATEMENT (NO FORWARD FILL)")
-        logger.info("="*80)
-
-        # Load
-        filepath = self.raw_dir / 'company_income_raw.csv'
-        df = pd.read_csv(filepath)
-        before_stats = self.compute_statistics(df, 'Income Statement')
-
-        logger.info(f"\nBEFORE CLEANING:")
-        logger.info(f"  Shape: {df.shape}")
-        logger.info(f"  Companies: {df['Company'].nunique() if 'Company' in df.columns else 'N/A'}")
-        logger.info(f"  Missing: {before_stats['total_missing']} ({before_stats['missing_pct']}%)")
-
-        # Parse date
-        df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
-        df.sort_values(['Company', 'Date'], inplace=True)
-
-        # Handle EPS column
-        logger.info("\n💰 Handling EPS (Earnings Per Share) column...")
-        
-        if 'EPS' in df.columns:
-            null_count = df['EPS'].isna().sum()
-            total_rows = len(df)
-            
-            if null_count > 0:
-                logger.info(f"  ℹ️  EPS has {null_count:,} null values ({null_count/total_rows*100:.1f}%)")
-                logger.info("      Filling nulls with 0")
-                df['EPS'] = df['EPS'].fillna(0.0)
-            else:
-                logger.info("  ✅ EPS column has no null values")
         else:
-            logger.warning("  ⚠️  EPS column not found in data")
-            logger.info("      Creating EPS column with value 0")
-            df['EPS'] = 0.0
+            logger.error("  ✗ No price column found")
+            return None
         
-        logger.info(f"  ✓ EPS handling complete")
-
-        # Apply 45-day reporting lag
-        logger.info(f"\n⏰ Applying {self.REPORTING_LAGS['earnings']}-day reporting lag...")
-        logger.info("  Why: Earnings for Q1 (3/31) are reported ~45 days later (5/15)")
-        logger.info("  Effect: Q1 data becomes 'available' on 5/15, not 3/31")
+        # Add quarter info
+        df = self.add_quarter_info(df)
+        df['Original_Quarter_End'] = df['Quarter_End_Date'].copy()
         
-        df = self.apply_reporting_lag(df, lag_days=self.REPORTING_LAGS['earnings'])
-
-        # Handle nulls per company (NO forward fill)
-        logger.info("\n🔧 Handling remaining null values (NO forward fill)...")
-        df = self.handle_nulls_no_lookahead(df, date_col='Date', group_col='Company')
-
-        # Remove duplicates
-        df = df.drop_duplicates(subset=['Date', 'Company'], keep='last')
-
-        after_stats = self.compute_statistics(df, 'Income Statement')
-
-        logger.info(f"\nAFTER CLEANING:")
-        logger.info(f"  Shape: {df.shape}")
-        logger.info(f"  Companies: {df['Company'].nunique()}")
-        logger.info(f"  Missing: {after_stats['total_missing']} ({after_stats['missing_pct']}%)")
-        logger.info(f"  Date range: {df['Date'].min().date()} to {df['Date'].max().date()}")
-
-        output_path = self.clean_dir / 'company_income_clean.csv'
-        df.to_csv(output_path, index=False)
-        logger.info(f"\n✓ Saved to: {output_path}")
-
-        return df, before_stats, after_stats
-
-    def save_statistics_report(self, all_stats: Dict):
-        """Save detailed cleaning report."""
-        report_data = []
-
-        for dataset_name, stats_pair in all_stats.items():
-            before = stats_pair['before']
-            after = stats_pair['after']
-
-            report_data.append({
-                'Dataset': dataset_name,
-                'Rows_Before': before['n_rows'],
-                'Rows_After': after['n_rows'],
-                'Missing_Before': before['total_missing'],
-                'Missing_After': after['total_missing'],
-                'Missing_Pct_Before': before['missing_pct'],
-                'Missing_Pct_After': after['missing_pct'],
-                'Duplicates_Before': before['duplicates'],
-                'Duplicates_After': after['duplicates']
-            })
-
-        report_df = pd.DataFrame(report_data)
-        report_path = self.report_dir / 'step1_cleaning_report.csv'
-        report_df.to_csv(report_path, index=False)
-        logger.info(f"\n✓ Cleaning report saved to: {report_path}")
-
-        return report_df
-
-    # ========== MASTER CLEANING PIPELINE ==========
-
-    def clean_all(self) -> Dict[str, Tuple[pd.DataFrame, Dict, Dict]]:
-        """Run complete point-in-time cleaning pipeline with full statistics."""
-        logger.info("\n" + "="*80)
-        logger.info("STEP 1: DATA CLEANING PIPELINE (NO FORWARD FILL)")
-        logger.info("="*80)
-        logger.info("\nKey Principles:")
-        logger.info("  1. NO forward fill (removed - preserves data sparsity)")
-        logger.info("  2. Apply reporting lags to quarterly financials (45 days)")
-        logger.info("  3. Detect outliers but DON'T remove (crises are real!)")
-        logger.info("  4. Per-company handling (no cross-contamination)")
-        logger.info("\nModifications for Quarterly Data:")
-        logger.info("  - Accept 20-40% missing (natural quarterly gaps)")
-        logger.info("  - Only fill leading NaNs with median")
-        logger.info("  - Date range: 1990-2025 (35 years)")
-        logger.info("  - Companies: 50 (expanded from 25)")
-        logger.info("="*80)
-
-        overall_start = time.time()
+        # Keep essential columns
+        df['q_price'] = df['Stock_Price']
+        if 'Volume' in df.columns:
+            df['q_volume'] = df['Volume']
+        if 'High' in df.columns:
+            df['q_high'] = df['High']
+        if 'Low' in df.columns:
+            df['q_low'] = df['Low']
+        if 'Open' in df.columns:
+            df['q_open'] = df['Open']
         
-        all_results = {}
-        all_stats = {}
-
-        # Clean each dataset
-        logger.info("\n[1/5] Cleaning FRED data...")
-        df_fred, before_fred, after_fred = self.clean_fred()
-        all_results['fred'] = df_fred
-        all_stats['fred'] = {'before': before_fred, 'after': after_fred}
-
-        logger.info("\n[2/5] Cleaning Market data...")
-        df_market, before_market, after_market = self.clean_market()
-        all_results['market'] = df_market
-        all_stats['market'] = {'before': before_market, 'after': after_market}
-
-        logger.info("\n[3/5] Cleaning Company Prices...")
-        df_prices, before_prices, after_prices = self.clean_company_prices()
-        all_results['prices'] = df_prices
-        all_stats['prices'] = {'before': before_prices, 'after': after_prices}
-
-        logger.info("\n[4/5] Cleaning Balance Sheet...")
-        df_balance, before_balance, after_balance = self.clean_balance_sheet()
-        all_results['balance'] = df_balance
-        all_stats['balance'] = {'before': before_balance, 'after': after_balance}
-
-        logger.info("\n[5/5] Cleaning Income Statement...")
-        df_income, before_income, after_income = self.clean_income_statement()
-        all_results['income'] = df_income
-        all_stats['income'] = {'before': before_income, 'after': after_income}
-
-        # ========== PRINT BEFORE/AFTER COMPARISONS ==========
-
-        logger.info("\n\n" + "="*80)
-        logger.info("BEFORE vs AFTER COMPARISON - ALL DATASETS")
-        logger.info("="*80)
-
-        for name, stats in all_stats.items():
-            self.print_statistics_comparison(stats['before'], stats['after'])
-
-        # ========== SAVE COMPREHENSIVE REPORT ==========
-
-        summary_report = self.save_statistics_report(all_stats)
-
-        # ========== FINAL SUMMARY ==========
+        # Calculate quarter-over-quarter return
+        logger.info(f"  Calculating quarter-over-quarter returns...")
+        df = df.sort_values(['Company', 'Date'])
+        df['prev_q_price'] = df.groupby('Company')['Stock_Price'].shift(1)
         
-        elapsed = time.time() - overall_start
-
-        logger.info("\n\n" + "="*80)
-        logger.info("STEP 1 COMPLETE - SUMMARY")
-        logger.info("="*80)
+        df['q_return'] = np.where(
+            df['prev_q_price'] > 0,
+            (df['Stock_Price'] - df['prev_q_price']) / df['prev_q_price'] * 100,
+            np.nan
+        )
         
-        logger.info(f"\n📊 DATA CLEANED:")
-        logger.info(f"  1. FRED:            {df_fred.shape[0]:,} rows × {df_fred.shape[1]} cols")
-        logger.info(f"  2. Market:          {df_market.shape[0]:,} rows × {df_market.shape[1]} cols")
-        logger.info(f"  3. Company Prices:  {df_prices.shape[0]:,} rows ({df_prices['Company'].nunique()} companies)")
-        logger.info(f"  4. Balance Sheets:  {df_balance.shape[0]:,} rows ({df_balance['Company'].nunique()} companies)")
-        logger.info(f"  5. Income Stmts:    {df_income.shape[0]:,} rows ({df_income['Company'].nunique()} companies)")
-
-        logger.info(f"\n📁 OUTPUT FILES (data/clean/):")
-        logger.info(f"  - fred_clean.csv")
-        logger.info(f"  - market_clean.csv")
-        logger.info(f"  - company_prices_clean.csv")
-        logger.info(f"  - company_balance_clean.csv")
-        logger.info(f"  - company_income_clean.csv")
-
-        logger.info(f"\n📊 REPORTS (data/reports/):")
-        logger.info(f"  - step1_cleaning_report.csv")
-
-        logger.info(f"\n⏱️  Total Time: {elapsed:.1f}s ({elapsed/60:.1f} min)")
+        # Calculate price range
+        if 'q_high' in df.columns and 'q_low' in df.columns:
+            df['q_price_range_pct'] = np.where(
+                df['q_price'] > 0,
+                (df['q_high'] - df['q_low']) / df['q_price'] * 100,
+                np.nan
+            )
         
-        logger.info(f"\n📊 KEY MODIFICATIONS:")
-        logger.info(f"  ❌ NO forward filling (preserves sparsity)")
-        logger.info(f"  ✓ Leading NaNs filled with median")
-        logger.info(f"  ✓ Reporting lags applied (45 days)")
-        logger.info(f"  ✓ Natural quarterly gaps preserved")
-        logger.info("="*80)
+        # Stats
+        valid = (~df['q_return'].isna() & (df['q_return'] != 0)).sum()
+        logger.info(f"  Valid returns: {valid} ({valid/len(df)*100:.1f}%)")
+        logger.info(f"  Mean return: {df['q_return'].mean():.2f}%")
         
-        logger.info("\n✅ Step 1 Complete!")
-        logger.info("\n➡️  Next Steps:")
-        logger.info("   1. Run: python step2_feature_engineering.py")
-
-        return all_results, all_stats
-
-
-def main():
-    """Execute Step 1: Data Cleaning."""
-
-    cleaner = PointInTimeDataCleanerNoFFill(raw_dir="data/raw", clean_dir="data/clean")
+        df = df.drop(columns=['prev_q_price'], errors='ignore')
+        
+        return df
     
-    try:
-        cleaned_data, statistics = cleaner.clean_all()
+    def aggregate_fred_to_quarterly(self, df):
+        """Aggregate daily FRED data to quarterly."""
+        logger.info("\nAggregating FRED Data to Quarterly...")
+        df = df.copy()
         
+        # Parse dates
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df.sort_values('Date').reset_index(drop=True)
+        
+        logger.info(f"  Raw FRED data: {df.shape}")
+        logger.info(f"  Date range: {df['Date'].min().date()} to {df['Date'].max().date()}")
+        
+        # Add quarter info
+        df = self.add_quarter_info(df)
+        
+        # Identify quarterly vs daily columns
+        # GDP, Unemployment, CPI are quarterly
+        # Others are daily
+        
+        quarterly_cols = ['GDP', 'CPI', 'Unemployment_Rate']
+        daily_cols = [col for col in df.columns if col not in quarterly_cols + ['Date', 'Year', 'Quarter_Num', 'Quarter', 'Quarter_End_Date']]
+        
+        logger.info(f"  Aggregating {len(daily_cols)} daily metrics to quarterly...")
+        
+        # Aggregate to quarterly
+        agg_dict = {}
+        
+        # For quarterly metrics, take last value
+        for col in quarterly_cols:
+            if col in df.columns:
+                agg_dict[col] = 'last'
+        
+        # For daily metrics, calculate mean, max, std
+        for col in daily_cols:
+            if col in df.columns:
+                agg_dict[col] = ['mean', 'max', 'std']
+        
+        quarterly_fred = df.groupby(['Quarter', 'Year', 'Quarter_Num']).agg(agg_dict).reset_index()
+        
+        # Flatten multi-level columns
+        new_cols = []
+        for col in quarterly_fred.columns:
+            if isinstance(col, tuple):
+                if col[1] == '':
+                    new_cols.append(col[0])
+                else:
+                    new_cols.append(f"{col[0]}_{col[1]}")
+            else:
+                new_cols.append(col)
+        
+        quarterly_fred.columns = new_cols
+        
+        # Get quarter end date
+        quarterly_fred['Quarter_End_Date'] = quarterly_fred.apply(
+            lambda row: self.get_quarter_end(pd.Timestamp(year=int(row['Year']), month=int(row['Quarter_Num'])*3, day=1)),
+            axis=1
+        )
+        
+        logger.info(f"  ✓ FRED aggregated: {quarterly_fred.shape}")
+        logger.info(f"  Quarters: {len(quarterly_fred)}")
+        
+        return quarterly_fred
+    
+    def aggregate_market_to_quarterly(self, df):
+        """Aggregate daily market data (VIX, SP500) to quarterly."""
+        logger.info("\nAggregating Market Data to Quarterly...")
+        df = df.copy()
+        
+        # Parse dates
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df.sort_values('Date').reset_index(drop=True)
+        
+        logger.info(f"  Raw market data: {df.shape}")
+        logger.info(f"  Date range: {df['Date'].min().date()} to {df['Date'].max().date()}")
+        
+        # Add quarter info
+        df = self.add_quarter_info(df)
+        
+        # Aggregate to quarterly
+        quarterly_market = df.groupby(['Quarter', 'Year', 'Quarter_Num']).agg({
+            'VIX': ['mean', 'max', 'std'],
+            'SP500': ['first', 'last', 'mean', 'min', 'max']
+        }).reset_index()
+        
+        # Flatten columns
+        quarterly_market.columns = [
+            '_'.join(col).strip() if col[1] else col[0] 
+            for col in quarterly_market.columns.values
+        ]
+        
+        # Rename for clarity
+        quarterly_market = quarterly_market.rename(columns={
+            'VIX_mean': 'vix_q_mean',
+            'VIX_max': 'vix_q_max',
+            'VIX_std': 'vix_q_std',
+            'SP500_first': 'sp500_q_start',
+            'SP500_last': 'sp500_q_end',
+            'SP500_mean': 'sp500_q_mean',
+            'SP500_min': 'sp500_q_min',
+            'SP500_max': 'sp500_q_max'
+        })
+        
+        # Calculate SP500 quarterly return
+        quarterly_market['sp500_q_return'] = (
+            (quarterly_market['sp500_q_end'] - quarterly_market['sp500_q_start']) 
+            / quarterly_market['sp500_q_start'] * 100
+        )
+        
+        # Get quarter end date
+        quarterly_market['Quarter_End_Date'] = quarterly_market.apply(
+            lambda row: self.get_quarter_end(pd.Timestamp(year=int(row['Year']), month=int(row['Quarter_Num'])*3, day=1)),
+            axis=1
+        )
+        
+        logger.info(f"  ✓ Market data aggregated: {quarterly_market.shape}")
+        logger.info(f"  Quarters: {len(quarterly_market)}")
+        logger.info(f"  SP500 return mean: {quarterly_market['sp500_q_return'].mean():.2f}%")
+        
+        return quarterly_market
+    
+    # ========== MERGING FUNCTION ==========
+    
+    def merge_all_quarterly_data(self, balance_df, income_df, prices_df, fred_df, market_df):
+        """Merge all quarterly datasets."""
         logger.info("\n" + "="*80)
-        logger.info("✅ STEP 1 SUCCESSFULLY COMPLETED")
+        logger.info("MERGING ALL QUARTERLY DATA")
         logger.info("="*80)
         
-        return cleaned_data, statistics
+        # Step 1: Merge Balance + Income
+        logger.info("\n[1/5] Merging Balance Sheet + Income Statement...")
         
-    except FileNotFoundError as e:
-        logger.error(f"\n❌ ERROR: {e}")
-        logger.error("Make sure raw data files exist in data/raw/")
-        logger.error("Run Step 0 first: python step0_data_collection.py")
-        return None, None
-    except Exception as e:
-        logger.error(f"\n❌ Unexpected error: {e}")
-        import traceback
-        traceback.print_exc()
-        return None, None
+        merge_cols = ['Original_Quarter_End', 'Company', 'Quarter', 'Year', 'Quarter_Num']
+        optional_cols = ['Company_Name', 'Sector']
+        for col in optional_cols:
+            if col in balance_df.columns and col in income_df.columns:
+                merge_cols.append(col)
+        
+        fundamentals = pd.merge(
+            balance_df,
+            income_df,
+            on=merge_cols,
+            how='outer',
+            suffixes=('', '_inc')
+        )
+        
+        # Remove duplicates
+        dup_cols = [col for col in fundamentals.columns if col.endswith('_inc') and col.replace('_inc', '') in fundamentals.columns]
+        if dup_cols:
+            fundamentals = fundamentals.drop(columns=dup_cols)
+        
+        logger.info(f"  Fundamentals: {len(fundamentals)} quarters, {fundamentals['Company'].nunique()} companies")
+        
+        # Step 2: Merge Fundamentals + Prices
+        logger.info("\n[2/5] Merging Fundamentals + Stock Prices...")
+        
+        company_data = pd.merge(
+            fundamentals,
+            prices_df,
+            on=['Company', 'Original_Quarter_End'],
+            how='inner',
+            suffixes=('', '_px')
+        )
+        
+        # Clean duplicate columns
+        dup_cols = [col for col in company_data.columns if col.endswith('_px') and col.replace('_px', '') in company_data.columns]
+        if dup_cols:
+            company_data = company_data.drop(columns=dup_cols)
+        
+        logger.info(f"  Company data: {len(company_data)} quarters")
+        
+        # Step 3: Merge FRED data
+        logger.info("\n[3/5] Merging FRED Macro Data...")
+        
+        company_data = pd.merge(
+            company_data,
+            fred_df,
+            on=['Quarter', 'Year', 'Quarter_Num'],
+            how='left',
+            suffixes=('', '_fred')
+        )
+        
+        logger.info(f"  After FRED merge: {len(company_data)} quarters")
+        
+        # Step 4: Merge Market data
+        logger.info("\n[4/5] Merging Market Data (VIX, SP500)...")
+        
+        final_df = pd.merge(
+            company_data,
+            market_df,
+            on=['Quarter', 'Year', 'Quarter_Num'],
+            how='left',
+            suffixes=('', '_mkt')
+        )
+        
+        # Clean duplicate columns
+        dup_cols = [col for col in final_df.columns if col.endswith('_mkt') and col.replace('_mkt', '') in final_df.columns]
+        if dup_cols:
+            final_df = final_df.drop(columns=dup_cols)
+        
+        logger.info(f"  Final dataset: {len(final_df)} quarters")
+        logger.info(f"  Companies: {final_df['Company'].nunique()}")
+        
+        # Step 5: Summary
+        logger.info("\n[5/5] Company data summary...")
+        
+        for company in sorted(final_df['Company'].unique())[:5]:
+            company_df = final_df[final_df['Company'] == company]
+            logger.info(f"    {company}: {len(company_df)} qtrs  ({company_df['Quarter'].min()} → {company_df['Quarter'].max()})")
+        
+        if final_df['Company'].nunique() > 5:
+            logger.info(f"    ... and {final_df['Company'].nunique() - 5} more companies")
+        
+        return final_df
+    
+    # ========== VALIDATION ==========
+    
+    def validate_quarterly_data(self, df):
+        """Validate the final quarterly dataset."""
+        logger.info("\n" + "="*80)
+        logger.info("VALIDATION REPORT")
+        logger.info("="*80)
+        
+        logger.info(f"\n1. Dataset Overview:")
+        logger.info(f"   ✓ ONE ROW PER QUARTER PER COMPANY")
+        logger.info(f"   Shape: {df.shape}")
+        logger.info(f"   Quarters: {len(df):,}")
+        logger.info(f"   Companies: {df['Company'].nunique()}")
+        logger.info(f"   Date range: {df['Date'].min().date()} to {df['Date'].max().date()}")
+        
+        logger.info(f"\n2. Data Completeness:")
+        key_cols = ['Revenue', 'Net_Income', 'Total_Assets', 'q_return', 'q_price', 'vix_q_mean', 'sp500_q_return']
+        
+        for col in key_cols:
+            if col in df.columns:
+                missing = df[col].isna().sum()
+                pct = missing / len(df) * 100
+                status = '✓' if pct < 5 else '⚠️'
+                logger.info(f"   {status} {col:20s}: {missing:>6,} missing ({pct:>5.1f}%)")
+        
+        logger.info(f"\n3. Sample Data:")
+        sample_cols = ['Date', 'Quarter', 'Company', 'Revenue', 'q_return', 'sp500_q_return', 'vix_q_mean']
+        sample_cols = [col for col in sample_cols if col in df.columns]
+        print("\n" + df[sample_cols].head(5).to_string(index=False))
+        
+        return df
+    
+    # ========== MAIN PIPELINE ==========
+    
+    def run_pipeline(self):
+        """Execute complete pipeline."""
+        logger.info("\n" + "="*80)
+        logger.info("COMPLETE QUARTERLY DATA PIPELINE")
+        logger.info("="*80)
+        
+        # Load all raw files
+        logger.info("\nLoading raw files...")
+        try:
+            balance_raw = pd.read_csv(self.raw_dir / 'company_balance_raw.csv')
+            income_raw = pd.read_csv(self.raw_dir / 'company_income_raw.csv')
+            prices_raw = pd.read_csv(self.raw_dir / 'company_prices_raw.csv')
+            fred_raw = pd.read_csv(self.raw_dir / 'fred_raw.csv')
+            market_raw = pd.read_csv(self.raw_dir / 'market_raw.csv')
+            
+            logger.info(f"✓ Balance Sheet: {balance_raw.shape}")
+            logger.info(f"✓ Income Statement: {income_raw.shape}")
+            logger.info(f"✓ Stock Prices: {prices_raw.shape}")
+            logger.info(f"✓ FRED Data: {fred_raw.shape}")
+            logger.info(f"✓ Market Data: {market_raw.shape}")
+        except FileNotFoundError as e:
+            logger.error(f"✗ Error: {e}")
+            return None
+        
+        # Step 1: Clean fundamentals
+        logger.info("\n" + "="*80)
+        logger.info("STEP 1: CLEANING FUNDAMENTALS")
+        logger.info("="*80)
+        
+        balance_clean = self.clean_quarterly_fundamentals(balance_raw, 'balance')
+        income_clean = self.clean_quarterly_fundamentals(income_raw, 'income')
+        
+        # Step 2: Clean prices
+        logger.info("\n" + "="*80)
+        logger.info("STEP 2: CLEANING STOCK PRICES")
+        logger.info("="*80)
+        
+        prices_clean = self.clean_quarterly_prices(prices_raw)
+        if prices_clean is None:
+            return None
+        
+        # Step 3: Aggregate FRED
+        logger.info("\n" + "="*80)
+        logger.info("STEP 3: AGGREGATING FRED DATA")
+        logger.info("="*80)
+        
+        fred_quarterly = self.aggregate_fred_to_quarterly(fred_raw)
+        
+        # Step 4: Aggregate Market
+        logger.info("\n" + "="*80)
+        logger.info("STEP 4: AGGREGATING MARKET DATA")
+        logger.info("="*80)
+        
+        market_quarterly = self.aggregate_market_to_quarterly(market_raw)
+        
+        # Step 5: Merge all
+        logger.info("\n" + "="*80)
+        logger.info("STEP 5: MERGING ALL DATA")
+        logger.info("="*80)
+        
+        merged_df = self.merge_all_quarterly_data(
+            balance_clean, income_clean, prices_clean,
+            fred_quarterly, market_quarterly
+        )
+        
+        if merged_df is None:
+            return None
+        
+        # Step 6: Validate
+        logger.info("\n" + "="*80)
+        logger.info("STEP 6: VALIDATION")
+        logger.info("="*80)
+        
+        validated_df = self.validate_quarterly_data(merged_df)
+        
+        # Sort and save
+        validated_df = validated_df.sort_values(['Company', 'Date']).reset_index(drop=True)
+        
+        output_path = self.output_dir / 'quarterly_data_complete.csv'
+        validated_df.to_csv(output_path, index=False)
+        logger.info(f"\n✓ Saved to: {output_path}")
+        
+        # Summary
+        logger.info("\n" + "="*80)
+        logger.info("PIPELINE COMPLETE ✅")
+        logger.info("="*80)
+        logger.info(f"\n📊 Final Dataset:")
+        logger.info(f"   Shape: {validated_df.shape}")
+        logger.info(f"   Quarters: {len(validated_df):,}")
+        logger.info(f"   Companies: {validated_df['Company'].nunique()}")
+        logger.info(f"   Features: {validated_df.shape[1]}")
+        logger.info(f"\n   Includes:")
+        logger.info(f"   ✓ Company fundamentals (Balance + Income)")
+        logger.info(f"   ✓ Stock prices & returns")
+        logger.info(f"   ✓ Macro indicators (GDP, CPI, etc.)")
+        logger.info(f"   ✓ Market metrics (VIX, SP500)")
+        
+        return validated_df
 
+
+# ========== USAGE ==========
 
 if __name__ == "__main__":
-    cleaned, stats = main()
+    pipeline = QuarterlyDataPipeline(
+        raw_dir='data/raw',
+        output_dir='data/processed'
+    )
+    
+    quarterly_data = pipeline.run_pipeline()
+    
+    if quarterly_data is not None:
+        print("\n✅ SUCCESS! Complete quarterly dataset ready.")
+        print(f"\nOutput: data/processed/quarterly_data_complete.csv")
+        print(f"\nFormat: ONE ROW PER QUARTER PER COMPANY")
+        print(f"\nIncludes:")
+        print(f"  • Fundamentals (Revenue, Assets, Debt, etc.)")
+        print(f"  • Stock metrics (q_return, q_price, q_volume)")
+        print(f"  • Macro data (GDP, CPI, Unemployment)")
+        print(f"  • Market data (VIX, SP500)")

@@ -1,518 +1,663 @@
 """
-STEP 2: COMPREHENSIVE FEATURE ENGINEERING (CLEAN VERSION)
+FEATURE ENGINEERING PIPELINE FOR CRISIS PREDICTION
+===================================================
 
-Based on actual data structure:
-- FRED: Daily data (macro indicators)
-- Market: Daily data (VIX, SP500)
-- Company Prices: Quarterly data (stock prices)
-- Balance: Quarterly data
-- Income: Quarterly data
+Creates features for:
+- M2: XGBoost + LSTM (Predictive model)
+- M3: Isolation Forest (Anomaly detector)
+- C1: SHAP Explainer (Interpretability)
 
-Creates:
-1. Macro features (daily FRED + Market with quarterly aggregates) → for VAE
-2. Company features (quarterly fundamentals + market features) → for prediction
+Input: quarterly_data_complete.csv (ONE ROW PER QUARTER PER COMPANY)
+Output: features_engineered.csv (with 150+ features)
 
-Output:
-- macro_features_daily.csv (daily with quarterly aggregates, for VAE)
-- company_features_quarterly.csv (quarterly, for prediction)
+Author: Financial ML Pipeline
+Date: 2025
 """
 
 import pandas as pd
 import numpy as np
 from pathlib import Path
 import logging
-from typing import Dict
-import time
-import warnings
-
-warnings.filterwarnings('ignore')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
-class CleanFeatureEngineer:
-    """Clean feature engineering matching actual data structure."""
-
-    def __init__(self, clean_dir: str = "data/clean", features_dir: str = "data/features"):
-        self.clean_dir = Path(clean_dir)
-        self.features_dir = Path(features_dir)
-        self.features_dir.mkdir(parents=True, exist_ok=True)
-
-    def load_cleaned_data(self) -> Dict[str, pd.DataFrame]:
-        """Load all cleaned datasets."""
-        logger.info("="*80)
-        logger.info("LOADING CLEANED DATASETS")
-        logger.info("="*80)
-
-        data = {}
-
-        for name, filename in [
-            ('fred', 'fred_clean.csv'),
-            ('market', 'market_clean.csv'),
-            ('prices', 'company_prices_clean.csv'),
-            ('balance', 'company_balance_clean.csv'),
-            ('income', 'company_income_clean.csv')
-        ]:
-            path = self.clean_dir / filename
-            if path.exists():
-                df = pd.read_csv(path)
-                # Handle Date parsing
-                if 'Date' in df.columns:
-                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-                data[name] = df
-                logger.info(f"  ✓ {name}: {df.shape}")
-            else:
-                logger.warning(f"  ⚠️  {filename} not found")
-
-        return data
-
-    # ========== MACRO FEATURES (DAILY WITH QUARTERLY AGGREGATES) ==========
-
-    def create_macro_daily_features(self, fred_df: pd.DataFrame, market_df: pd.DataFrame) -> pd.DataFrame:
+class FeatureEngineer:
+    """Engineer features for crisis prediction models."""
+    
+    def __init__(self, input_path='data/processed/quarterly_data_complete.csv',
+                 output_path='data/processed/features_engineered.csv'):
+        self.input_path = Path(input_path)
+        self.output_path = Path(output_path)
+        
+    # ========== 1. LAGGED FEATURES (for LSTM & time-series patterns) ==========
+    
+    def create_lagged_features(self, df):
         """
-        Create macro features from daily FRED + Market data.
+        Create lagged features (previous quarters).
         
-        Output: Daily data with quarterly aggregate features.
+        Critical for LSTM and XGBoost to learn temporal patterns.
         """
-        logger.info("\n" + "="*80)
-        logger.info("CREATING MACRO FEATURES (DAILY + QUARTERLY AGGREGATES)")
-        logger.info("="*80)
-
-        # Merge FRED + Market on Date
-        logger.info("\n1. Merging FRED + Market (daily)...")
+        logger.info("\n[1/8] Creating lagged features...")
         
-        macro = pd.merge(fred_df, market_df, on='Date', how='outer')
-        macro = macro.sort_values('Date')
+        df = df.sort_values(['Company', 'Date']).copy()
         
-        logger.info(f"   Merged: {macro.shape}")
-        logger.info(f"   Date range: {macro['Date'].min().date()} to {macro['Date'].max().date()}")
-        
-        # Add Quarter identifier
-        macro['Quarter'] = macro['Date'].dt.to_period('Q')
-        
-        logger.info(f"\n2. Creating quarterly aggregates...")
-        
-        # Define columns to aggregate
-        fred_cols = ['GDP', 'CPI', 'Unemployment_Rate', 'Federal_Funds_Rate', 
-                     'Yield_Curve_Spread', 'Consumer_Confidence', 'Oil_Price',
-                     'Corporate_Bond_Spread', 'TED_Spread', 'Treasury_10Y_Yield',
-                     'High_Yield_Spread']
-        
-        market_cols = ['VIX', 'SP500_Close']
-        
-        # Calculate SP500 daily returns
-        macro['sp500_ret_t'] = macro['SP500_Close'].pct_change()
-        
-        # Create quarterly aggregates
-        quarterly_features = []
-        
-        for quarter in macro['Quarter'].unique():
-            q_data = macro[macro['Quarter'] == quarter].copy()
+        # Define columns to lag
+        lag_cols = [
+            # Financial metrics
+            'Revenue', 'Net_Income', 'Total_Assets', 'Total_Debt',
+            'Gross_Profit', 'Operating_Income', 'EBITDA',
             
-            if len(q_data) < 2:
-                continue
+            # Ratios
+            'Debt_to_Equity', 'Current_Ratio',
             
-            q_features = {
-                'Quarter': str(quarter),
-                'quarter_start_date': q_data['Date'].iloc[0],
-                'quarter_end_date': q_data['Date'].iloc[-1]
-            }
+            # Stock metrics
+            'q_return', 'q_price',
             
-            last20 = q_data.iloc[-20:] if len(q_data) >= 20 else q_data
-            
-            # === VIX FEATURES ===
-            if 'VIX' in q_data.columns:
-                q_features['vix_mean_q'] = q_data['VIX'].mean()
-                q_features['vix_max_q'] = q_data['VIX'].max()
-                q_features['vix_std_q'] = q_data['VIX'].std()
-                q_features['vix_stress_days_q'] = (q_data['VIX'] > 30).sum()
-                q_features['vix_last_month_mean_q'] = last20['VIX'].mean()
-            
-            # === SP500 FEATURES ===
-            if 'SP500_Close' in q_data.columns:
-                first_sp = q_data['SP500_Close'].iloc[0]
-                last_sp = q_data['SP500_Close'].iloc[-1]
-                
-                q_features['sp500_q_return'] = ((last_sp - first_sp) / (first_sp + 1e-6)) * 100
-                q_features['sp500_q_volatility'] = q_data['sp500_ret_t'].std() * 100
-                
-                # Max drawdown
-                cummax = q_data['SP500_Close'].cummax()
-                drawdown = ((q_data['SP500_Close'] / cummax) - 1) * 100
-                q_features['sp500_q_max_drawdown'] = drawdown.min()
-                
-                q_features['sp500_big_drop_days_q'] = (q_data['sp500_ret_t'] < -0.02).sum()
-            
-            # === CREDIT STRESS ===
-            for col, threshold in [
-                ('Corporate_Bond_Spread', 3.0),
-                ('High_Yield_Spread', 6.0),
-                ('TED_Spread', 0.5)
-            ]:
-                if col in q_data.columns:
-                    col_clean = col.lower().replace('_', '')
-                    q_features[f'{col_clean}_mean_q'] = q_data[col].mean()
-                    q_features[f'{col_clean}_max_q'] = q_data[col].max()
-                    q_features[f'{col_clean}_std_q'] = q_data[col].std()
-                    q_features[f'{col_clean}_stress_days_q'] = (q_data[col] > threshold).sum()
-            
-            # === RATES & CURVE ===
-            if 'Treasury_10Y_Yield' in q_data.columns:
-                q_features['t10y_mean_q'] = q_data['Treasury_10Y_Yield'].mean()
-                q_features['t10y_change_q'] = q_data['Treasury_10Y_Yield'].iloc[-1] - q_data['Treasury_10Y_Yield'].iloc[0]
-            
-            if 'Federal_Funds_Rate' in q_data.columns:
-                q_features['fed_funds_mean_q'] = q_data['Federal_Funds_Rate'].mean()
-                q_features['fed_funds_change_q'] = q_data['Federal_Funds_Rate'].iloc[-1] - q_data['Federal_Funds_Rate'].iloc[0]
-            
-            if 'Yield_Curve_Spread' in q_data.columns:
-                q_features['yc_spread_mean_q'] = q_data['Yield_Curve_Spread'].mean()
-                q_features['yc_inversion_days_q'] = (q_data['Yield_Curve_Spread'] < 0).sum()
-            
-            # === MACRO (LAST VALUES) ===
-            for col in ['GDP', 'CPI', 'Unemployment_Rate', 'Consumer_Confidence', 'Oil_Price']:
-                if col in q_data.columns:
-                    last_val = q_data[col].iloc[-1]
-                    if pd.notna(last_val):
-                        q_features[f'{col.lower()}_q'] = last_val
-            
-            quarterly_features.append(q_features)
-        
-        # Create quarterly aggregates DataFrame
-        q_agg_df = pd.DataFrame(quarterly_features)
-        
-        logger.info(f"   ✓ Created {len(q_agg_df.columns) - 3} quarterly aggregate features")
-        logger.info(f"   ✓ Quarters: {len(q_agg_df)}")
-        
-        # Merge quarterly aggregates back to daily data
-        logger.info(f"\n3. Merging quarterly aggregates back to daily data...")
-        
-        macro['Quarter'] = macro['Quarter'].astype(str)
-        macro_with_agg = pd.merge(macro, q_agg_df, on='Quarter', how='left')
-        
-        # Remove temporary columns
-        macro_with_agg.drop(columns=['sp500_ret_t', 'quarter_start_date', 'quarter_end_date'], 
-                           inplace=True, errors='ignore')
-        
-        logger.info(f"   ✓ Final macro features: {macro_with_agg.shape}")
-        
-        return macro_with_agg
-
-    # ========== COMPANY FEATURES (QUARTERLY FUNDAMENTALS) ==========
-
-    def create_company_quarterly_features(self, prices_df: pd.DataFrame,
-                                         balance_df: pd.DataFrame,
-                                         income_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Create company features from quarterly data.
-        
-        Since prices are QUARTERLY (not daily), we create fundamental ratios
-        and simple quarterly returns.
-        """
-        logger.info("\n" + "="*80)
-        logger.info("CREATING COMPANY FEATURES (QUARTERLY)")
-        logger.info("="*80)
-
-        # === 1. MERGE ALL COMPANY DATA ===
-        logger.info("\n1. Merging company datasets...")
-        
-        # Merge balance + income
-        df = pd.merge(balance_df, income_df, on=['Date', 'Company'], how='outer', suffixes=('', '_inc'))
-        
-        # Remove duplicate columns
-        dup_cols = [col for col in df.columns if col.endswith('_inc')]
-        if dup_cols:
-            df.drop(columns=dup_cols, inplace=True)
-        
-        # Merge with prices
-        price_cols = ['Date', 'Company', 'Stock_Price', 'Volume']
-        available_price_cols = [col for col in price_cols if col in prices_df.columns]
-        df = pd.merge(df, prices_df[available_price_cols], on=['Date', 'Company'], how='outer')
-        
-        df = df.sort_values(['Company', 'Date'])
-        
-        logger.info(f"   Merged: {df.shape}")
-        
-        # === 2. FUNDAMENTAL FEATURES ===
-        logger.info("\n2. Creating fundamental features...")
-        
-        # Scale / Size
-        df['log_total_assets_q'] = np.log(df['Total_Assets'].fillna(1) + 1)
-        df['log_revenue_q'] = np.log(df['Revenue'].fillna(0) + 1)
-        
-        # Leverage
-        df['debt_to_assets_q'] = df['Total_Debt'] / (df['Total_Assets'] + 1e-6)
-        df['long_term_debt_to_assets_q'] = df['Long_Term_Debt'] / (df['Total_Assets'] + 1e-6)
-        df['short_term_debt_to_assets_q'] = df['Short_Term_Debt'] / (df['Total_Assets'] + 1e-6)
-        df['short_term_debt_ratio_q'] = df['Short_Term_Debt'] / (df['Total_Debt'] + 1e-6)
-        
-        # Liquidity
-        df['cash_to_assets_q'] = df['Cash'] / (df['Total_Assets'] + 1e-6)
-        df['cash_to_current_liabilities_q'] = df['Cash'] / (df['Current_Liabilities'] + 1e-6)
-        df['current_ratio_q'] = df['Current_Assets'] / (df['Current_Liabilities'] + 1e-6)
-        
-        # Profitability
-        df['net_margin_q'] = df['Net_Income'] / (df['Revenue'] + 1e-6)
-        df['gross_margin_q'] = df['Gross_Profit'] / (df['Revenue'] + 1e-6)
-        df['operating_margin_q'] = df['Operating_Income'] / (df['Revenue'] + 1e-6)
-        df['ebitda_margin_q'] = df['EBITDA'] / (df['Revenue'] + 1e-6)
-        df['roa_q'] = df['Net_Income'] / (df['Total_Assets'] + 1e-6)
-        df['roe_q'] = df['Net_Income'] / (df['Total_Equity'] + 1e-6)
-        
-        # Coverage
-        df['ebitda_to_total_debt_q'] = df['EBITDA'] / (df['Total_Debt'] + 1e-6)
-        
-        logger.info(f"   ✓ Created 17 fundamental features")
-        
-        # === 3. QUARTERLY STOCK MARKET FEATURES ===
-        logger.info("\n3. Creating quarterly stock market features...")
-        
-        # Simple quarterly return
-        df['stock_q_return'] = df.groupby('Company')['Stock_Price'].pct_change() * 100
-        
-        # Volume features
-        if 'Volume' in df.columns:
-            df['stock_q_mean_volume'] = df['Volume']  # Already quarterly
-        
-        logger.info(f"   ✓ Created 2 stock market features")
-        
-        # === 4. TEMPORAL FEATURES ===
-        logger.info("\n4. Creating temporal features (lags, deltas, rolling)...")
-        
-        # Key features for temporal analysis
-        key_features = [
-            'stock_q_return', 'net_margin_q', 'roa_q', 'roe_q',
-            'debt_to_assets_q', 'log_revenue_q', 'log_total_assets_q'
+            # Macro
+            'GDP_last', 'Unemployment_Rate_last', 'vix_q_mean', 'sp500_q_return'
         ]
-        key_features = [f for f in key_features if f in df.columns]
         
-        for col in key_features:
-            # Lags (per company)
-            df[f'{col}_t_1'] = df.groupby('Company')[col].shift(1)
-            df[f'{col}_t_2'] = df.groupby('Company')[col].shift(2)
-            df[f'{col}_t_4'] = df.groupby('Company')[col].shift(4)
-            
-            # Deltas
-            df[f'Δ{col}_1q'] = df[col] - df[f'{col}_t_1']
-            df[f'Δ{col}_4q'] = df[col] - df[f'{col}_t_4']
-            
-            # Rolling (4 quarters)
-            df[f'rolling4q_avg_{col}'] = df.groupby('Company')[col].rolling(4, min_periods=1).mean().reset_index(0, drop=True)
-            df[f'rolling4q_min_{col}'] = df.groupby('Company')[col].rolling(4, min_periods=1).min().reset_index(0, drop=True)
-            df[f'rolling4q_max_{col}'] = df.groupby('Company')[col].rolling(4, min_periods=1).max().reset_index(0, drop=True)
+        # Create lags for 1, 2, 4 quarters back
+        lags = [1, 2, 4]
+        feature_count = 0
         
-        logger.info(f"   ✓ Created {len(key_features) * 8} temporal features")
+        for col in lag_cols:
+            if col in df.columns:
+                for lag in lags:
+                    new_col = f"{col}_lag_{lag}q"
+                    df[new_col] = df.groupby('Company')[col].shift(lag)
+                    feature_count += 1
         
-        # Replace inf with NaN
-        df = df.replace([np.inf, -np.inf], np.nan)
-        
-        logger.info(f"\n✓ Final company features: {df.shape}")
+        logger.info(f"  ✓ Created {feature_count} lagged features")
+        logger.info(f"    Example: Revenue_lag_1q (previous quarter revenue)")
         
         return df
-
-    def create_macro_quarterly_aggregates(self, macro_daily: pd.DataFrame) -> pd.DataFrame:
+    
+    # ========== 2. GROWTH RATES (momentum & trends) ==========
+    
+    def create_growth_features(self, df):
         """
-        Create quarterly aggregates from daily macro data.
+        Calculate quarter-over-quarter and year-over-year growth rates.
         
-        Returns DataFrame with one row per quarter.
+        Critical for detecting deteriorating fundamentals.
         """
-        macro_daily = macro_daily.copy()
-        macro_daily['Quarter'] = macro_daily['Date'].dt.to_period('Q')
+        logger.info("\n[2/8] Creating growth rate features...")
         
-        quarterly_features = []
+        growth_cols = [
+            'Revenue', 'Net_Income', 'Total_Assets', 'Total_Debt',
+            'Gross_Profit', 'Operating_Income', 'Cash'
+        ]
         
-        for quarter in macro_daily['Quarter'].unique():
-            q_data = macro_daily[macro_daily['Quarter'] == quarter].copy()
-            
-            if len(q_data) < 2:
-                continue
-            
-            q_features = {
-                'Quarter': str(quarter),
-                'Date': q_data['Date'].iloc[-1]  # Quarter-end date
-            }
-            
-            last20 = q_data.iloc[-20:] if len(q_data) >= 20 else q_data
-            
-            # VIX features
-            if 'VIX' in q_data.columns:
-                q_features['vix_mean_q'] = q_data['VIX'].mean()
-                q_features['vix_max_q'] = q_data['VIX'].max()
-                q_features['vix_std_q'] = q_data['VIX'].std()
-                q_features['vix_stress_days_q'] = (q_data['VIX'] > 30).sum()
-                q_features['vix_last_month_mean_q'] = last20['VIX'].mean()
-            
-            # SP500 features
-            if 'SP500_Close' in q_data.columns:
-                first_sp = q_data['SP500_Close'].iloc[0]
-                last_sp = q_data['SP500_Close'].iloc[-1]
+        feature_count = 0
+        
+        for col in growth_cols:
+            if col in df.columns:
+                # Quarter-over-quarter growth (1q)
+                df[f"{col}_growth_1q"] = df.groupby('Company')[col].pct_change(1) * 100
                 
-                q_features['sp500_q_return'] = ((last_sp - first_sp) / (first_sp + 1e-6)) * 100
+                # Year-over-year growth (4q)
+                df[f"{col}_growth_4q"] = df.groupby('Company')[col].pct_change(4) * 100
                 
-                sp_ret = q_data['SP500_Close'].pct_change()
-                q_features['sp500_q_volatility'] = sp_ret.std() * 100
-                
-                # Max drawdown
-                cummax = q_data['SP500_Close'].cummax()
-                drawdown = ((q_data['SP500_Close'] / cummax) - 1) * 100
-                q_features['sp500_q_max_drawdown'] = drawdown.min()
-                
-                q_features['sp500_big_drop_days_q'] = (sp_ret < -0.02).sum()
-            
-            # Credit stress features
-            for col, threshold in [
-                ('Corporate_Bond_Spread', 3.0),
-                ('High_Yield_Spread', 6.0),
-                ('TED_Spread', 0.5)
-            ]:
-                if col in q_data.columns:
-                    col_short = col.lower().replace('_', '')[:10]  # Shorten name
-                    q_features[f'{col_short}_mean_q'] = q_data[col].mean()
-                    q_features[f'{col_short}_max_q'] = q_data[col].max()
-                    q_features[f'{col_short}_std_q'] = q_data[col].std()
-                    q_features[f'{col_short}_stress_days_q'] = (q_data[col] > threshold).sum()
-            
-            # Rates features
-            if 'Treasury_10Y_Yield' in q_data.columns:
-                q_features['t10y_mean_q'] = q_data['Treasury_10Y_Yield'].mean()
-                q_features['t10y_change_q'] = q_data['Treasury_10Y_Yield'].iloc[-1] - q_data['Treasury_10Y_Yield'].iloc[0]
-            
-            if 'Federal_Funds_Rate' in q_data.columns:
-                q_features['fedfunds_mean_q'] = q_data['Federal_Funds_Rate'].mean()
-                q_features['fedfunds_change_q'] = q_data['Federal_Funds_Rate'].iloc[-1] - q_data['Federal_Funds_Rate'].iloc[0]
-            
-            if 'Yield_Curve_Spread' in q_data.columns:
-                q_features['yc_spread_mean_q'] = q_data['Yield_Curve_Spread'].mean()
-                q_features['yc_inversion_days_q'] = (q_data['Yield_Curve_Spread'] < 0).sum()
-            
-            # Macro last values
-            for col in ['GDP', 'CPI', 'Unemployment_Rate', 'Consumer_Confidence', 'Oil_Price']:
-                if col in q_data.columns:
-                    last_val = q_data[col].iloc[-1]
-                    if pd.notna(last_val):
-                        q_features[f'{col.lower()}_q'] = last_val
-            
-            quarterly_features.append(q_features)
+                feature_count += 2
         
-        q_df = pd.DataFrame(quarterly_features)
-        q_df['Date'] = pd.to_datetime(q_df['Date'])
+        logger.info(f"  ✓ Created {feature_count} growth features")
+        logger.info(f"    Example: Revenue_growth_1q (QoQ revenue growth %)")
         
-        return q_df
-
-    # ========== MAIN PIPELINE ==========
-
-    def run_feature_engineering(self) -> Dict[str, pd.DataFrame]:
-        """Execute feature engineering."""
-        logger.info("\n" + "="*80)
-        logger.info("STEP 2: COMPREHENSIVE FEATURE ENGINEERING")
-        logger.info("="*80)
-        logger.info("\nStrategy:")
-        logger.info("  1. Macro: Daily FRED + Market → quarterly aggregates")
-        logger.info("  2. Company: Quarterly fundamentals + temporal features")
-        logger.info("="*80)
-
-        overall_start = time.time()
-
-        data = self.load_cleaned_data()
-
-        if not data or 'fred' not in data or 'market' not in data:
-            logger.error("\n❌ Missing required data!")
-            return {}
-
-        # === MACRO FEATURES (DAILY + QUARTERLY AGGREGATES) ===
-        logger.info("\n[1/2] MACRO FEATURES")
+        return df
+    
+    # ========== 2.5. CALCULATE EPS (if possible) ==========
+    
+    def calculate_eps(self, df):
+        """
+        Calculate EPS (Earnings Per Share).
         
-        macro_daily = self.create_macro_daily_features(data['fred'], data['market'])
+        Method 1: If we have shares outstanding → EPS = Net_Income / Shares
+        Method 2: If EPS column exists but has nulls → try to calculate
+        Method 3: Use diluted share count estimate
         
-        # Save daily macro with aggregates
-        output_path = self.features_dir / 'macro_features_daily.csv'
-        macro_daily.to_csv(output_path, index=False)
-        logger.info(f"\n✓ Saved: {output_path}")
-        logger.info(f"  Rows: {len(macro_daily):,} (daily)")
-        logger.info(f"  Columns: {len(macro_daily.columns)}")
+        For financial companies, EPS is often already reported, so we preserve it.
+        """
+        logger.info("\n[2.5/8] Calculating/Validating EPS...")
         
-        # Also create quarterly version for compatibility
-        macro_quarterly = self.create_macro_quarterly_aggregates(macro_daily)
-        output_path = self.features_dir / 'macro_features_quarterly.csv'
-        macro_quarterly.to_csv(output_path, index=False)
-        logger.info(f"\n✓ Saved: {output_path}")
-        logger.info(f"  Rows: {len(macro_quarterly):,} (quarterly)")
-
-        # === COMPANY FEATURES (QUARTERLY) ===
-        logger.info("\n[2/2] COMPANY FEATURES")
+        # Check if EPS column exists
+        if 'EPS' not in df.columns:
+            logger.info("  EPS column not found - creating it")
+            df['EPS'] = 0.0
         
-        if 'prices' in data and 'balance' in data and 'income' in data:
-            company_features = self.create_company_quarterly_features(
-                data['prices'],
-                data['balance'],
-                data['income']
+        # Count existing EPS values
+        existing_eps = (~df['EPS'].isna() & (df['EPS'] != 0)).sum()
+        total_rows = len(df)
+        
+        logger.info(f"  Existing valid EPS values: {existing_eps}/{total_rows} ({existing_eps/total_rows*100:.1f}%)")
+        
+        # If most EPS are missing, try to calculate
+        if existing_eps / total_rows < 0.5:
+            logger.info(f"  Attempting to calculate missing EPS...")
+            
+            # Method 1: Estimate shares from market cap (if available)
+            # Market Cap = Price × Shares
+            # We can estimate shares if we know typical P/E ratios
+            
+            # Method 2: For missing values, use sector median EPS as proxy
+            if 'Sector' in df.columns and 'Net_Income' in df.columns:
+                for sector in df['Sector'].unique():
+                    sector_mask = df['Sector'] == sector
+                    sector_median_eps = df.loc[sector_mask, 'EPS'][df.loc[sector_mask, 'EPS'] > 0].median()
+                    
+                    if pd.notna(sector_median_eps):
+                        # For companies with no EPS, estimate based on Net_Income relative to sector
+                        missing_mask = sector_mask & ((df['EPS'].isna()) | (df['EPS'] == 0))
+                        if missing_mask.sum() > 0:
+                            # Simple estimation: scale by Net_Income
+                            sector_median_ni = df.loc[sector_mask, 'Net_Income'].median()
+                            if sector_median_ni > 0:
+                                df.loc[missing_mask, 'EPS_estimated'] = (
+                                    df.loc[missing_mask, 'Net_Income'] / sector_median_ni * sector_median_eps
+                                )
+            
+            # Method 3: Rough approximation from Net_Income
+            # Assume typical share count of 1B for large caps
+            if 'EPS_estimated' not in df.columns:
+                logger.info("  Using rough EPS approximation: Net_Income / 1B shares")
+                missing_mask = (df['EPS'].isna()) | (df['EPS'] == 0)
+                df.loc[missing_mask, 'EPS_calculated'] = df.loc[missing_mask, 'Net_Income'] / 1_000_000_000
+        
+        # Fill remaining zeros with calculated/estimated values
+        if 'EPS_estimated' in df.columns:
+            df['EPS'] = df['EPS'].replace(0, np.nan)
+            df['EPS'] = df['EPS'].fillna(df['EPS_estimated'])
+            df = df.drop(columns=['EPS_estimated'])
+            logger.info("  ✓ Filled missing EPS with sector-based estimates")
+        
+        if 'EPS_calculated' in df.columns:
+            df['EPS'] = df['EPS'].replace(0, np.nan)  
+            df['EPS'] = df['EPS'].fillna(df['EPS_calculated'])
+            df = df.drop(columns=['EPS_calculated'])
+            logger.info("  ✓ Filled missing EPS with Net_Income approximation")
+        
+        # Final EPS stats
+        final_eps = (~df['EPS'].isna() & (df['EPS'] != 0)).sum()
+        logger.info(f"  Final EPS coverage: {final_eps}/{total_rows} ({final_eps/total_rows*100:.1f}%)")
+        
+        if final_eps > 0:
+            logger.info(f"  EPS range: ${df['EPS'].min():.2f} to ${df['EPS'].max():.2f}")
+            logger.info(f"  EPS mean: ${df['EPS'].mean():.2f}")
+        
+        return df
+    
+    # ========== 3. FINANCIAL RATIOS (health indicators) ==========
+    
+    def create_financial_ratios(self, df):
+        """
+        Create financial health ratios.
+        
+        Critical for anomaly detection and crisis prediction.
+        """
+        logger.info("\n[3/8] Creating financial ratio features...")
+        
+        feature_count = 0
+        
+        # NEW: P/E Ratio (if we have EPS)
+        if 'EPS' in df.columns and 'q_price' in df.columns:
+            df['pe_ratio'] = np.where(
+                df['EPS'] > 0,
+                df['q_price'] / df['EPS'],
+                np.nan
             )
-            
-            output_path = self.features_dir / 'company_features.csv'
-            company_features.to_csv(output_path, index=False)
-            logger.info(f"\n✓ Saved: {output_path}")
-            logger.info(f"  Rows: {len(company_features):,}")
-            logger.info(f"  Columns: {len(company_features.columns)}")
-
-        elapsed = time.time() - overall_start
-
-        # === SUMMARY ===
+            logger.info(f"  ✓ Created P/E ratio (Price/EPS)")
+            feature_count += 1
+        
+        # NEW: EPS growth
+        if 'EPS' in df.columns:
+            df['eps_growth_1q'] = df.groupby('Company')['EPS'].pct_change(1) * 100
+            df['eps_growth_4q'] = df.groupby('Company')['EPS'].pct_change(4) * 100
+            logger.info(f"  ✓ Created EPS growth rates")
+            feature_count += 2
+        
+        # Profitability ratios
+        if 'Net_Income' in df.columns and 'Revenue' in df.columns:
+            df['net_margin'] = np.where(df['Revenue'] > 0, 
+                                        df['Net_Income'] / df['Revenue'] * 100, np.nan)
+            feature_count += 1
+        
+        if 'Gross_Profit' in df.columns and 'Revenue' in df.columns:
+            df['gross_margin'] = np.where(df['Revenue'] > 0,
+                                          df['Gross_Profit'] / df['Revenue'] * 100, np.nan)
+            feature_count += 1
+        
+        if 'Operating_Income' in df.columns and 'Revenue' in df.columns:
+            df['operating_margin'] = np.where(df['Revenue'] > 0,
+                                              df['Operating_Income'] / df['Revenue'] * 100, np.nan)
+            feature_count += 1
+        
+        # Asset efficiency
+        if 'Net_Income' in df.columns and 'Total_Assets' in df.columns:
+            df['roa'] = np.where(df['Total_Assets'] > 0,
+                                df['Net_Income'] / df['Total_Assets'] * 100, np.nan)
+            feature_count += 1
+        
+        if 'Net_Income' in df.columns and 'Total_Equity' in df.columns:
+            df['roe'] = np.where(df['Total_Equity'] > 0,
+                                df['Net_Income'] / df['Total_Equity'] * 100, np.nan)
+            feature_count += 1
+        
+        # Leverage ratios
+        if 'Total_Debt' in df.columns and 'Total_Assets' in df.columns:
+            df['debt_to_assets'] = np.where(df['Total_Assets'] > 0,
+                                           df['Total_Debt'] / df['Total_Assets'], np.nan)
+            feature_count += 1
+        
+        if 'Total_Debt' in df.columns and 'EBITDA' in df.columns:
+            df['debt_to_ebitda'] = np.where(df['EBITDA'] > 0,
+                                           df['Total_Debt'] / df['EBITDA'], np.nan)
+            feature_count += 1
+        
+        # Liquidity ratios
+        if 'Cash' in df.columns and 'Current_Liabilities' in df.columns:
+            df['cash_ratio'] = np.where(df['Current_Liabilities'] > 0,
+                                       df['Cash'] / df['Current_Liabilities'], np.nan)
+            feature_count += 1
+        
+        logger.info(f"  ✓ Created {feature_count} financial ratio features")
+        
+        return df
+    
+    # ========== 4. ROLLING STATISTICS (trends & patterns) ==========
+    
+    def create_rolling_features(self, df):
+        """
+        Create rolling window statistics (4-quarter windows).
+        
+        Captures trends and volatility over time.
+        """
+        logger.info("\n[4/8] Creating rolling window features...")
+        
+        rolling_cols = [
+            'q_return', 'Revenue', 'Net_Income', 'net_margin', 'roa', 'roe',
+            'debt_to_assets', 'vix_q_mean', 'sp500_q_return'
+        ]
+        
+        feature_count = 0
+        
+        for col in rolling_cols:
+            if col in df.columns:
+                # 4-quarter rolling mean
+                df[f"{col}_rolling4q_mean"] = df.groupby('Company')[col].transform(
+                    lambda x: x.rolling(window=4, min_periods=1).mean()
+                )
+                
+                # 4-quarter rolling std (volatility)
+                df[f"{col}_rolling4q_std"] = df.groupby('Company')[col].transform(
+                    lambda x: x.rolling(window=4, min_periods=1).std()
+                )
+                
+                # 4-quarter rolling min/max
+                df[f"{col}_rolling4q_min"] = df.groupby('Company')[col].transform(
+                    lambda x: x.rolling(window=4, min_periods=1).min()
+                )
+                df[f"{col}_rolling4q_max"] = df.groupby('Company')[col].transform(
+                    lambda x: x.rolling(window=4, min_periods=1).max()
+                )
+                
+                feature_count += 4
+        
+        logger.info(f"  ✓ Created {feature_count} rolling window features")
+        logger.info(f"    Captures 4-quarter trends and volatility")
+        
+        return df
+    
+    # ========== 5. MOMENTUM & ACCELERATION (rate of change) ==========
+    
+    def create_momentum_features(self, df):
+        """
+        Create momentum features (change in growth rates).
+        
+        Detects accelerating/decelerating trends.
+        """
+        logger.info("\n[5/8] Creating momentum features...")
+        
+        feature_count = 0
+        
+        # Revenue acceleration
+        if 'Revenue_growth_1q' in df.columns:
+            df['revenue_acceleration'] = df.groupby('Company')['Revenue_growth_1q'].diff()
+            feature_count += 1
+        
+        # Margin trends
+        if 'net_margin' in df.columns:
+            df['net_margin_trend'] = df.groupby('Company')['net_margin'].diff()
+            feature_count += 1
+        
+        # Debt accumulation rate
+        if 'debt_to_assets' in df.columns:
+            df['debt_accumulation'] = df.groupby('Company')['debt_to_assets'].diff()
+            feature_count += 1
+        
+        # Stock momentum
+        if 'q_return' in df.columns:
+            df['return_momentum'] = df.groupby('Company')['q_return'].diff()
+            feature_count += 1
+        
+        logger.info(f"  ✓ Created {feature_count} momentum features")
+        
+        return df
+    
+    # ========== 6. CRISIS INDICATORS (anomaly detection features) ==========
+    
+    def create_crisis_indicators(self, df):
+        """
+        Create crisis-specific indicators.
+        
+        Designed for Isolation Forest anomaly detection.
+        """
+        logger.info("\n[6/8] Creating crisis indicator features...")
+        
+        feature_count = 0
+        
+        # 1. Stress flags
+        if 'vix_q_max' in df.columns:
+            df['vix_stress'] = (df['vix_q_max'] > 30).astype(int)  # High fear
+            feature_count += 1
+        
+        if 'Unemployment_Rate_last' in df.columns:
+            df['unemployment_stress'] = (df['Unemployment_Rate_last'] > 7).astype(int)
+            feature_count += 1
+        
+        # 2. Yield curve inversion (recession predictor)
+        if 'Yield_Curve_Spread_mean' in df.columns:
+            df['yield_curve_inverted'] = (df['Yield_Curve_Spread_mean'] < 0).astype(int)
+            feature_count += 1
+        
+        # 3. Revenue decline flag
+        if 'Revenue_growth_1q' in df.columns:
+            df['revenue_declining'] = (df['Revenue_growth_1q'] < -5).astype(int)
+            feature_count += 1
+        
+        # 4. Margin compression
+        if 'net_margin' in df.columns and 'net_margin_lag_1q' in df.columns:
+            df['margin_compression'] = ((df['net_margin'] - df['net_margin_lag_1q']) < -2).astype(int)
+            feature_count += 1
+        
+        # 5. Excessive leverage
+        if 'debt_to_assets' in df.columns:
+            # Flag if debt > 70% of assets
+            df['high_leverage'] = (df['debt_to_assets'] > 0.7).astype(int)
+            feature_count += 1
+        
+        # 6. Liquidity crunch
+        if 'Current_Ratio' in df.columns:
+            df['liquidity_risk'] = (df['Current_Ratio'] < 1.0).astype(int)
+            feature_count += 1
+        
+        # 7. Combined stress score (composite)
+        stress_cols = [col for col in df.columns if col in [
+            'vix_stress', 'unemployment_stress', 'yield_curve_inverted',
+            'revenue_declining', 'margin_compression', 'high_leverage', 'liquidity_risk'
+        ]]
+        
+        if stress_cols:
+            df['composite_stress_score'] = df[stress_cols].sum(axis=1)
+            feature_count += 1
+        
+        logger.info(f"  ✓ Created {feature_count} crisis indicator features")
+        
+        return df
+    
+    # ========== 7. RELATIVE FEATURES (vs market & sector) ==========
+    
+    def create_relative_features(self, df):
+        """
+        Create relative performance features.
+        
+        Compare company vs market and sector peers.
+        """
+        logger.info("\n[7/8] Creating relative performance features...")
+        
+        feature_count = 0
+        
+        # 1. Stock return vs SP500
+        if 'q_return' in df.columns and 'sp500_q_return' in df.columns:
+            df['excess_return'] = df['q_return'] - df['sp500_q_return']
+            df['beta_proxy'] = df['q_return'] / df['sp500_q_return'].replace(0, np.nan)
+            feature_count += 2
+        
+        # 2. Performance vs sector (if multiple companies per sector)
+        if 'Sector' in df.columns and 'q_return' in df.columns:
+            df['sector_avg_return'] = df.groupby(['Quarter', 'Sector'])['q_return'].transform('mean')
+            df['return_vs_sector'] = df['q_return'] - df['sector_avg_return']
+            feature_count += 2
+        
+        # 3. Revenue vs sector
+        if 'Sector' in df.columns and 'Revenue_growth_1q' in df.columns:
+            df['sector_avg_revenue_growth'] = df.groupby(['Quarter', 'Sector'])['Revenue_growth_1q'].transform('mean')
+            df['revenue_growth_vs_sector'] = df['Revenue_growth_1q'] - df['sector_avg_revenue_growth']
+            feature_count += 2
+        
+        logger.info(f"  ✓ Created {feature_count} relative features")
+        
+        return df
+    
+    # ========== 8. INTERACTION FEATURES (non-linear relationships) ==========
+    
+    def create_interaction_features(self, df):
+        """
+        Create interaction features for XGBoost.
+        
+        Captures non-linear relationships between variables.
+        """
+        logger.info("\n[8/8] Creating interaction features...")
+        
+        feature_count = 0
+        
+        # 1. Leverage × Market stress
+        if 'debt_to_assets' in df.columns and 'vix_q_mean' in df.columns:
+            df['leverage_x_vix'] = df['debt_to_assets'] * df['vix_q_mean']
+            feature_count += 1
+        
+        # 2. Margin × Market return
+        if 'net_margin' in df.columns and 'sp500_q_return' in df.columns:
+            df['margin_x_market'] = df['net_margin'] * df['sp500_q_return']
+            feature_count += 1
+        
+        # 3. Debt × Interest rates
+        if 'debt_to_assets' in df.columns and 'Federal_Funds_Rate_mean' in df.columns:
+            df['debt_x_rates'] = df['debt_to_assets'] * df['Federal_Funds_Rate_mean']
+            feature_count += 1
+        
+        # 4. Revenue decline × High VIX (crisis signal)
+        if 'Revenue_growth_1q' in df.columns and 'vix_q_mean' in df.columns:
+            df['revenue_decline_x_vix'] = df['Revenue_growth_1q'] * df['vix_q_mean']
+            feature_count += 1
+        
+        logger.info(f"  ✓ Created {feature_count} interaction features")
+        
+        return df
+    
+    # ========== BONUS: NORMALIZATION & SCALING ==========
+    
+    def create_normalized_features(self, df):
+        """
+        Create log-transformed and z-score normalized features.
+        
+        Important for Isolation Forest (needs similar scales).
+        """
+        logger.info("\n[BONUS] Creating normalized features...")
+        
+        feature_count = 0
+        
+        # Log transform large numbers (Revenue, Assets)
+        log_cols = ['Revenue', 'Total_Assets', 'Total_Debt', 'Cash']
+        
+        for col in log_cols:
+            if col in df.columns:
+                df[f"log_{col}"] = np.log1p(df[col])  # log(1 + x) handles zeros
+                feature_count += 1
+        
+        # Z-score normalize key ratios (within company)
+        zscore_cols = ['net_margin', 'roa', 'roe', 'debt_to_assets']
+        
+        for col in zscore_cols:
+            if col in df.columns:
+                df[f"{col}_zscore"] = df.groupby('Company')[col].transform(
+                    lambda x: (x - x.mean()) / x.std() if x.std() > 0 else 0
+                )
+                feature_count += 1
+        
+        logger.info(f"  ✓ Created {feature_count} normalized features")
+        
+        return df
+    
+    # ========== TARGET VARIABLE CREATION ==========
+    
+    def create_target_variables(self, df):
+        """
+        Create target variables for supervised learning.
+        
+        - next_q_return: Predict next quarter's stock return
+        - crisis_flag: Binary crisis indicator
+        """
+        logger.info("\n[TARGET] Creating target variables...")
+        
+        # 1. Next quarter return (regression target)
+        if 'q_return' in df.columns:
+            df['next_q_return'] = df.groupby('Company')['q_return'].shift(-1)
+            logger.info(f"  ✓ next_q_return (predict future return)")
+        
+        # 2. Crisis flag (classification target)
+        # Define crisis as: large stock drop + high VIX + negative growth
+        crisis_conditions = []
+        
+        if 'q_return' in df.columns:
+            crisis_conditions.append(df['q_return'] < -20)  # >20% drop
+        
+        if 'vix_q_mean' in df.columns:
+            crisis_conditions.append(df['vix_q_mean'] > 30)  # High fear
+        
+        if 'Revenue_growth_1q' in df.columns:
+            crisis_conditions.append(df['Revenue_growth_1q'] < -10)  # Revenue crash
+        
+        if crisis_conditions:
+            df['crisis_flag'] = sum(crisis_conditions).ge(2).astype(int)  # 2+ conditions = crisis
+            crisis_count = df['crisis_flag'].sum()
+            logger.info(f"  ✓ crisis_flag ({crisis_count} crisis quarters, {crisis_count/len(df)*100:.1f}%)")
+        
+        return df
+    
+    # ========== MAIN PIPELINE ==========
+    
+    def run_pipeline(self):
+        """Execute complete feature engineering pipeline."""
+        logger.info("\n" + "="*80)
+        logger.info("FEATURE ENGINEERING PIPELINE")
+        logger.info("="*80)
+        
+        # Load cleaned data
+        logger.info(f"\nLoading data from: {self.input_path}")
+        try:
+            df = pd.read_csv(self.input_path)
+            df['Date'] = pd.to_datetime(df['Date'])
+            logger.info(f"✓ Loaded: {df.shape}")
+        except FileNotFoundError:
+            logger.error(f"✗ File not found: {self.input_path}")
+            logger.error("Run data cleaning pipeline first!")
+            return None
+        
+        original_cols = df.shape[1]
+        
+        # Execute feature engineering steps
+        logger.info("\n" + "="*80)
+        logger.info("CREATING FEATURES")
+        logger.info("="*80)
+        
+        df = self.calculate_eps(df)  # Calculate EPS FIRST
+        df = self.create_lagged_features(df)
+        df = self.create_growth_features(df)
+        df = self.create_financial_ratios(df)  # Now can use EPS for P/E ratio
+        df = self.create_rolling_features(df)
+        df = self.create_momentum_features(df)
+        df = self.create_crisis_indicators(df)
+        df = self.create_relative_features(df)
+        df = self.create_interaction_features(df)
+        df = self.create_normalized_features(df)
+        df = self.create_target_variables(df)
+        
+        # Summary
+        new_cols = df.shape[1]
+        added_cols = new_cols - original_cols
+        
         logger.info("\n" + "="*80)
         logger.info("FEATURE ENGINEERING COMPLETE")
         logger.info("="*80)
-
-        logger.info(f"\n📊 OUTPUT FILES:")
-        logger.info(f"  1. macro_features_daily.csv")
-        logger.info(f"     - Daily FRED + Market data")
-        logger.info(f"     - ~50 quarterly aggregate features")
-        logger.info(f"     - Use: VAE training")
         
-        logger.info(f"\n  2. macro_features_quarterly.csv")
-        logger.info(f"     - Quarterly aggregates only")
-        logger.info(f"     - ~50 features")
-        logger.info(f"     - Use: Reference/validation")
+        logger.info(f"\n📊 Feature Summary:")
+        logger.info(f"   Original columns: {original_cols}")
+        logger.info(f"   New features added: {added_cols}")
+        logger.info(f"   Total columns: {new_cols}")
         
-        logger.info(f"\n  3. company_features.csv")
-        logger.info(f"     - Quarterly company data")
-        logger.info(f"     - ~17 fundamental + ~56 temporal features")
-        logger.info(f"     - Use: Prediction models")
-
-        logger.info(f"\n⏱️  Total Time: {elapsed:.1f}s")
+        # Feature categories
+        logger.info(f"\n📋 Feature Categories:")
+        logger.info(f"   1. Lagged features: ~{len([c for c in df.columns if 'lag_' in c])}")
+        logger.info(f"   2. Growth rates: ~{len([c for c in df.columns if 'growth_' in c])}")
+        logger.info(f"   3. Financial ratios: ~{len([c for c in df.columns if any(x in c for x in ['margin', 'roa', 'roe', 'ratio'])])}")
+        logger.info(f"   4. Rolling stats: ~{len([c for c in df.columns if 'rolling' in c])}")
+        logger.info(f"   5. Crisis indicators: ~{len([c for c in df.columns if any(x in c for x in ['stress', 'flag', 'risk'])])}")
+        
+        # Check missing data
+        logger.info(f"\n⚠️  Missing Data After Feature Engineering:")
+        missing_pct = (df.isna().sum() / len(df) * 100).sort_values(ascending=False).head(10)
+        for col, pct in missing_pct.items():
+            if pct > 20:
+                logger.info(f"   {col}: {pct:.1f}%")
+        
+        # Save
+        logger.info(f"\n💾 Saving engineered features to: {self.output_path}")
+        df.to_csv(self.output_path, index=False)
+        logger.info(f"✓ Saved: {df.shape}")
+        
+        # Final summary
+        logger.info("\n" + "="*80)
+        logger.info("READY FOR MODELING ✅")
         logger.info("="*80)
-
-        logger.info("\n✅ Step 2 Complete!")
-        logger.info("\n➡️  Next: python step3_data_merging.py")
-
-        return {
-            'macro_daily': macro_daily,
-            'macro_quarterly': macro_quarterly,
-            'company_features': company_features
-        }
-
-
-def main():
-    """Execute Step 2."""
-
-    engineer = CleanFeatureEngineer(clean_dir="data/clean", features_dir="data/features")
-
-    try:
-        features = engineer.run_feature_engineering()
-
-        if not features:
-            logger.error("\n❌ Feature engineering failed!")
-            return None
-
-        logger.info("\n✅ STEP 2 COMPLETE")
         
-        return features
+        logger.info(f"\n🎯 Model-Specific Features:")
+        logger.info(f"\n   M2: XGBoost + LSTM (Predictive)")
+        logger.info(f"   ✓ Lagged features (temporal context)")
+        logger.info(f"   ✓ Growth rates (momentum)")
+        logger.info(f"   ✓ Rolling statistics (trends)")
+        logger.info(f"   → Use for: Forecasting Revenue, EPS, Stock Returns")
+        
+        logger.info(f"\n   M3: Isolation Forest (Anomaly Detection)")
+        logger.info(f"   ✓ Crisis indicators (flags)")
+        logger.info(f"   ✓ Normalized features (z-scores)")
+        logger.info(f"   ✓ Extreme value detection (rolling min/max)")
+        logger.info(f"   → Use for: Detecting financial stress, crises")
+        
+        logger.info(f"\n   C1: SHAP Explainer")
+        logger.info(f"   ✓ All features are SHAP-compatible")
+        logger.info(f"   ✓ Interpretable names (e.g., 'net_margin', 'vix_stress')")
+        logger.info(f"   → Use for: Explaining model predictions")
+        
+        return df
 
-    except Exception as e:
-        logger.error(f"\n❌ ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
 
+# ========== USAGE ==========
 
 if __name__ == "__main__":
-    features = main()
+    engineer = FeatureEngineer(
+        input_path='data/processed/quarterly_data_complete.csv',
+        output_path='data/processed/features_engineered.csv'
+    )
+    
+    features_df = engineer.run_pipeline()
+    
+    if features_df is not None:
+        print("\n" + "="*80)
+        print("SUCCESS! Features engineered and ready for modeling.")
+        print("="*80)
+        print(f"\nOutput: data/processed/features_engineered.csv")
+        print(f"\nNext steps:")
+        print(f"1. Train M2 (XGBoost + LSTM) on features + targets")
+        print(f"2. Train M3 (Isolation Forest) on crisis indicators")
+        print(f"3. Apply SHAP explainer to interpret predictions")
