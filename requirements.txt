@@ -10,3 +10,7 @@ python-dotenv==1.0.0
 
 great-expectations==0.17.23
 gcloud
+
+# lib for scenario generation
+mlflow>=2.9.0
+python-dotenv>=1.0.0
