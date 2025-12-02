@@ -14,35 +14,41 @@ env:
   GCP_BUCKET: "mlops-financial-stress-data"
 
 jobs:
-  run-tests:
-    runs-on: ubuntu-latest
+  # run-tests:
+  #   runs-on: ubuntu-latest
     
-    steps:
-      - uses: actions/checkout@v4
+  #   steps:
+  #     - uses: actions/checkout@v4
       
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+  #     - uses: actions/setup-python@v4
+  #       with:
+  #         python-version: ${{ env.PYTHON_VERSION }}
+
+  #     - name: Free disk space
+  #       run: |
+  #         sudo rm -rf /usr/share/dotnet
+  #         sudo rm -rf /usr/local/lib/android
+  #         sudo rm -rf /opt/ghc
+
+  #     - name: Install dependencies
+  #       run: |
+  #         pip install --upgrade pip
+  #         pip install -r requirements.txt
+  #         pip install pytest
       
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
-      
-      - name: Run tests
-        run: |
-          if [ -d "tests" ]; then
-            pytest tests/ || echo "No tests found or tests failed"
-          else
-            echo "No tests directory found - skipping"
-          fi
-        continue-on-error: true
+  #     - name: Run tests
+  #       run: |
+  #         if [ -d "tests" ]; then
+  #           pytest tests/ || echo "No tests found or tests failed"
+  #         else
+  #           echo "No tests directory found - skipping"
+  #         fi
+  #       continue-on-error: true
 
   # NEW JOB: Download and prepare data from GCP
   prepare-data:
     runs-on: ubuntu-latest
-    needs: [run-tests]
+    # needs: [run-tests]
     
     steps:
       - uses: actions/checkout@v4
@@ -60,6 +66,12 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
       
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -144,6 +156,12 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -217,7 +235,37 @@ jobs:
             models/xgboost/xgboost_revenue_importance.csv
           retention-days: 30
         continue-on-error: true
+  
+  run-tests-1:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      
+      - name: Run tests
+        run: |
+          if [ -d "tests" ]; then
+            pytest tests/ || echo "No tests found or tests failed"
+          else
+            echo "No tests directory found - skipping"
+          fi
+        continue-on-error: true
   pipeline-summary:
     runs-on: ubuntu-latest
     needs: [run-tests, prepare-data, train-sample-model]
