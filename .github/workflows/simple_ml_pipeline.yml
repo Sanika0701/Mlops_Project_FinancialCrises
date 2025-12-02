@@ -100,12 +100,15 @@ jobs:
             echo "📊 Generating data splits..."
             
             # Step 1: Create targets
-            python src/preprocessing/create_targets.py
+            python src/models/create_targets.py
+
+            # Step 2: Drop unused columns
+            python src/preprocessing/drop_features.py
+
+            # Step 3: Create temporal splits
+            python src/preprocessing/temporal_split.py
             
-            # Step 2: Create temporal splits
-            python src/preprocessing/create_temporal_splits.py
-            
-            # Step 3: Handle outliers
+            # Step 4: Handle outliers
             python src/preprocessing/handle_outliers_after_split.py
             
             echo "✅ Splits generated"
