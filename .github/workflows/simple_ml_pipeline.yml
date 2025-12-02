@@ -100,7 +100,7 @@ jobs:
             echo "📊 Generating data splits..."
             
             # Step 1: Create targets
-            python src/models/create_targets.py
+            python src/models/create_target.py
 
             # Step 2: Drop unused columns
             python src/preprocessing/drop_features.py
