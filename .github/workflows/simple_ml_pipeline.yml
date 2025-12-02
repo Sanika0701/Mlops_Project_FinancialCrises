@@ -198,7 +198,7 @@ jobs:
       - name: Upload model files to GCS
         if: steps.check_data.outputs.data_exists == 'true'
         run: |
-          gcloud config set project YOUR_PROJECT_ID
+          gcloud config set project ninth-iris-422916-f2
           gsutil -m cp models/xgboost/* gs://${{ env.GCP_BUCKET }}/models/xgboost/
           echo "✅ Model uploaded to GCS"
         continue-on-error: true
