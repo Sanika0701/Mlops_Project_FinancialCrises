@@ -48,7 +48,7 @@ Scenario Generation (VAE) → Financial Forecasting (XGBoost/LSTM) → Risk Dete
 A three-stage ML pipeline that:
 
 1. **Generates diverse economic scenarios** using Variational Autoencoders trained on 35 years of macroeconomic data
-2. **Predicts company financial outcomes** under each scenario using ensemble methods (XGBoost + LSTM + Ridge)
+2. **Predicts company financial outcomes** under each scenario using ensemble methods (XGBoost + LSTM)
 3. **Identifies at-risk companies** using anomaly detection with automated weak supervision
 
 **Key Innovation:** Fully automated threshold extraction from statistical analysis eliminates manual tuning while maintaining economic validity.
@@ -190,18 +190,8 @@ Raw Features (234) → Drop Leakage (87) → Create Targets (5) → Temporal Spl
 
 ### Models Trained
 
-#### 1. Ridge Regression (Baseline)
 
-```bash
-python src/models/ridge_model.py
-```
-
-- **Type:** Linear regression with L2 regularization
-- **Alpha:** 1.0
-- **Purpose:** Establish baseline performance
-- **Performance:** R² ≈ 0.30-0.50 across targets
-
-#### 2. XGBoost ⭐ (Primary Model)
+#### 1. XGBoost ⭐ (Primary Model)
 
 ```bash
 python src/models/xgboost_model.py
@@ -230,7 +220,7 @@ python src/models/xgboost_model.py
 4. GDP_last (7.3%) - Macroeconomic health
 5. sp500_q_return (6.2%) - Market performance
 
-#### 3. LSTM
+#### 2. LSTM
 
 **Objective:** Predict 5 financial targets for next quarter across 84 companies
 
@@ -1264,7 +1254,6 @@ python src/preprocessing/handle_outliers_after_split.py
 python src/preprocessing/handle_missing_values_after_split.py
 
 # 3. Train Forecasting Models (~60 min)
-python src/models/ridge_model.py
 python src/models/xgboost_model.py
 python src/models/train_lstm_model.py
 python src/models/train_ensemble.py
@@ -1424,7 +1413,6 @@ financial-stress-test/
 │   │   └── handle_missing_values_after_split.py
 │   │
 │   ├── models/
-│   │   ├── ridge_model.py
 │   │   ├── xgboost_model.py
 │   │   ├── train_lstm_model.py
 │   │   ├── train_lightgbm_model.py
@@ -1499,7 +1487,7 @@ financial-stress-test/
 |-------|-----------|---------|
 | **Data** | Pandas, NumPy | Manipulation, numerical ops |
 | **Scenario Generation** | PyTorch, VAE | Deep generative modeling |
-| **Forecasting** | XGBoost, PyTorch (LSTM), Scikit-learn (Ridge) | Financial prediction |
+| **Forecasting** | XGBoost, PyTorch (LSTM), Scikit-learn | Financial prediction |
 | **Anomaly Detection** | Scikit-learn (IF, LOF, One-Class SVM) | Risk identification |
 | **Weak Supervision** | Snorkel 0.9.9 | Automated labeling |
 | **MLOps** | MLflow 2.9+ | Experiment tracking, model registry |
