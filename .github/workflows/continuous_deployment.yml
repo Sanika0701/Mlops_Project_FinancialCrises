@@ -1,4 +1,4 @@
-name: Continuous Deployment
+name: Financial Crisis - Continuous Deployment
 
 on:
   push:
