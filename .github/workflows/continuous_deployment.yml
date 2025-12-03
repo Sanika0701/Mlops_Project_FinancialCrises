@@ -1,4 +1,4 @@
-name: Financial Crisis - Simple ML Pipeline
+name: Continuous Deployment
 
 on:
   push:
@@ -145,7 +145,7 @@ jobs:
         continue-on-error: true
 
   # MODIFIED JOB: Train model using downloaded data
-  train-sample-model:
+  train-model:
     runs-on: ubuntu-latest
     needs: [run-tests, prepare-data]
     
@@ -238,7 +238,7 @@ jobs:
 
   pipeline-summary:
     runs-on: ubuntu-latest
-    needs: [run-tests, prepare-data, train-sample-model]
+    needs: [run-tests, prepare-data, train-model]
     if: always()
     
     steps:
@@ -250,9 +250,9 @@ jobs:
           echo ""
           echo "Tests: ${{ needs.run-tests.result }}"
           echo "Data Preparation: ${{ needs.prepare-data.result }}"
-          echo "Model Training: ${{ needs.train-sample-model.result }}"
+          echo "Model Training: ${{ needs.train-model.result }}"
           echo ""
-          if [ "${{ needs.train-sample-model.result }}" == "success" ]; then
+          if [ "${{ needs.train-model.result }}" == "success" ]; then
             echo "✅ Pipeline completed successfully!"
             echo ""
             echo "Model and data stored in GCS bucket: mlops-financial-stress-data"
