@@ -57,7 +57,7 @@
 # Pipeline Parameters
 
 data_collection:
-  start_date: '2005-01-01'
+  start_date: '1990-01-01'
   end_date: 'today'
   fred_series:
     - GDPC1
