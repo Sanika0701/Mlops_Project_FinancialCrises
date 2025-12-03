@@ -159,69 +159,6 @@ mlflow ui --port 5000
 
 ## Model 2: Financial Forecasting
 
-### Pipeline Overview
-
-```
-Raw Features (234) → Drop Leakage (87) → Create Targets (5) → Temporal Split (70/15/15) 
-→ Outlier Handling → Missing Values → Train Models → Bias Detection
-```
-
-### Target Variables
-
-**5 Financial Metrics (Next Quarter Prediction):**
-
-1. **Revenue:** Company sales (primary indicator of business health)
-2. **EPS:** Earnings per share (profitability per stockholder)
-3. **Debt/Equity:** Leverage ratio (financial risk)
-4. **Profit Margin:** Operating efficiency
-5. **Stock Return:** Market valuation change
-
-### Data Split Strategy
-
-**Temporal Split (Critical for Financial Data):**
-
-| Split      | Period    | Samples | Purpose |
-|------------|-----------|---------|---------|
-| Train      | 1990-2019 | 4,612   | Pre-COVID baseline |
-| Validation | 2020-2022 | 1,008   | COVID crisis testing |
-| Test       | 2023-2025 | 1,008   | Out-of-sample evaluation |
-
-**Why temporal?** Prevents look-ahead bias and simulates real deployment where you predict future from past.
-
-### Models Trained
-
-
-#### 1. XGBoost ⭐ (Primary Model)
-
-```bash
-python src/models/xgboost_model.py
-```
-
-**Hyperparameters:**
-- n_estimators: 500 (early stopping typically at ~200)
-- max_depth: 6
-- learning_rate: 0.01
-- subsample: 0.8
-
-**Performance (Test Set):**
-
-| Target         | R²    | RMSE   | Status |
-|----------------|-------|--------|--------|
-| Revenue        | 0.92  | $220M  | Excellent |
-| EPS            | 0.71  | $1.45  | Good |
-| Profit Margin  | 0.28  | 11.75% | Moderate |
-| Debt/Equity    | 0.04  | 7.21   | Poor (inherently volatile) |
-| Stock Return   | -0.21 | 0.14   | Unpredictable (market noise) |
-
-**Feature Importance (Revenue Model):**
-1. Revenue_lag_1q (32.4%) - Historical performance
-2. Total_Assets_lag_1q (12.1%) - Company size
-3. vix_q_mean (8.7%) - Market stress
-4. GDP_last (7.3%) - Macroeconomic health
-5. sp500_q_return (6.2%) - Market performance
-
-#### 2. LSTM
-
 **Objective:** Predict 5 financial targets for next quarter across 84 companies
 
 **Targets:**
@@ -823,7 +760,6 @@ Comprehensive validation plots generated for all models:
 
 **Location:** `reports/validation/`
 
----
 
 ## Model 3: Anomaly Detection
 
