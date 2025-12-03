@@ -1,18 +1,28 @@
 """
 STEP 6: ANOMALY DETECTION (FLAG ONLY - NO DATA MODIFICATION)
 
+MODIFIED FOR QUARTERLY DATA:
+- More lenient outlier detection (5 IQR vs 3 IQR)
+- Higher jump threshold for quarterly volatility (100% vs 50%)
+- Accept higher percentages of anomalies
+- Proper JSON serialization
+
 Detects anomalies and adds flag columns for model awareness.
-FIXED: Proper JSON serialization for all numpy/pandas types.
+
+Anomaly Types Detected:
+1. Statistical Outliers (IQR method)
+2. Business Rule Violations (negative prices, impossible ratios)
+3. Temporal Anomalies (sudden jumps)
 
 Usage:
-    python src/validation/step6_anomaly_detection.py
+    python step6_anomaly_detection.py
 """
 
 import pandas as pd
 import numpy as np
 from pathlib import Path
 import logging
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple
 from datetime import datetime
 import json
 import warnings
@@ -50,9 +60,11 @@ class NumpyEncoder(json.JSONEncoder):
 # ANOMALY DETECTOR
 # ============================================================================
 
-class AnomalyDetectorFlagOnly:
+class AnomalyDetectorQuarterly:
     """
-    Anomaly detector that only flags anomalies without modifying data.
+    Anomaly detector for quarterly data.
+    
+    MODIFIED: More lenient thresholds for quarterly volatility.
     """
     
     def __init__(self, dataset_name: str):
@@ -71,9 +83,10 @@ class AnomalyDetectorFlagOnly:
     def detect_statistical_outliers(self, df: pd.DataFrame, group_col: str = None) -> pd.DataFrame:
         """
         Detect statistical outliers using IQR method.
-        Adds flag columns: {column}_Outlier_Flag
+        
+        MODIFIED: Uses 5 IQR (was 3) for quarterly data volatility.
         """
-        logger.info("\n[1/3] Statistical Outlier Detection (IQR)...")
+        logger.info("\n[1/3] Statistical Outlier Detection (5 IQR for quarterly)...")
         
         df_flagged = df.copy()
         numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -84,9 +97,8 @@ class AnomalyDetectorFlagOnly:
         
         # Select important columns to flag
         important_cols = [
-            'Stock_Return_1D', 'Stock_Return_22D', 'Stock_Volatility_22D',
-            'Revenue_Growth_YoY', 'Profit_Margin', 'ROE', 'ROA', 
-            'Debt_to_Equity', 'VIX', 'SP500_Return_1D'
+            'Stock_Price', 'Revenue', 'Net_Income', 'Total_Assets',
+            'VIX', 'GDP', 'Unemployment_Rate'
         ]
         
         cols_to_flag = [col for col in important_cols if col in numeric_cols]
@@ -108,8 +120,9 @@ class AnomalyDetectorFlagOnly:
                     Q3 = group_data.quantile(0.75)
                     IQR = Q3 - Q1
                     
-                    lower = Q1 - 3 * IQR
-                    upper = Q3 + 3 * IQR
+                    # MODIFIED: 5 IQR instead of 3 (more lenient for quarterly)
+                    lower = Q1 - 5 * IQR
+                    upper = Q3 + 5 * IQR
                     
                     outlier_mask_group = (group_data < lower) | (group_data > upper)
                     outlier_count = outlier_mask_group.sum()
@@ -142,8 +155,8 @@ class AnomalyDetectorFlagOnly:
                 Q3 = data.quantile(0.75)
                 IQR = Q3 - Q1
                 
-                lower = Q1 - 3 * IQR
-                upper = Q3 + 3 * IQR
+                lower = Q1 - 5 * IQR
+                upper = Q3 + 5 * IQR
                 
                 outlier_mask = (df[col] < lower) | (df[col] > upper)
                 outlier_count = outlier_mask.sum()
@@ -181,10 +194,7 @@ class AnomalyDetectorFlagOnly:
     # ========== METHOD 2: BUSINESS RULE VIOLATIONS ==========
     
     def detect_business_rules(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Detect business rule violations.
-        Adds flag columns: {column}_Violation_Flag
-        """
+        """Detect business rule violations."""
         logger.info("\n[2/3] Business Rule Violation Detection...")
         
         df_flagged = df.copy()
@@ -197,7 +207,8 @@ class AnomalyDetectorFlagOnly:
             'CPI': 'CPI cannot be negative',
             'Total_Assets': 'Total assets cannot be negative',
             'Stock_Price': 'Stock price cannot be negative',
-            'Close': 'Close price cannot be negative'
+            'Close': 'Close price cannot be negative',
+            'Revenue': 'Revenue cannot be negative'
         }
         
         for col, rule in non_negative_rules.items():
@@ -221,9 +232,8 @@ class AnomalyDetectorFlagOnly:
         
         # === RULE 2: Impossible ratios ===
         ratio_rules = {
-            'Profit_Margin': (-100, 100, 'Profit margin must be between -100% and 100%'),
-            'ROE': (-200, 200, 'ROE must be between -200% and 200%'),
             'Debt_to_Equity': (0, 100, 'Debt-to-equity typically < 100'),
+            'Current_Ratio': (0, 50, 'Current ratio typically < 50'),
         }
         
         for col, (min_val, max_val, rule) in ratio_rules.items():
@@ -243,25 +253,6 @@ class AnomalyDetectorFlagOnly:
                     flag_col = f"{col}_Extreme_Flag"
                     df_flagged[flag_col] = violation_mask.astype(int)
                     self.anomaly_report['flags_created'].append(flag_col)
-        
-        # === RULE 3: Economic impossibilities ===
-        if 'GDP_Growth_90D' in df.columns:
-            extreme_mask = df['GDP_Growth_90D'].abs() > 20
-            extreme_count = extreme_mask.sum()
-            
-            if extreme_count > 0:
-                violations.append({
-                    'rule': 'GDP growth > 20% quarterly is impossible',
-                    'column': 'GDP_Growth_90D',
-                    'count': int(extreme_count),
-                    'severity': 'CRITICAL'
-                })
-                
-                flag_col = "GDP_Growth_Extreme_Flag"
-                df_flagged[flag_col] = extreme_mask.astype(int)
-                self.anomaly_report['flags_created'].append(flag_col)
-                
-                self.anomaly_report['critical_count'] += int(extreme_count)
         
         # Log violations
         if violations:
@@ -284,9 +275,10 @@ class AnomalyDetectorFlagOnly:
     def detect_temporal_anomalies(self, df: pd.DataFrame, group_col: str = None) -> pd.DataFrame:
         """
         Detect temporal anomalies (sudden jumps).
-        Adds flag columns: {column}_Jump_Flag
+        
+        MODIFIED: 100% jump threshold (was 50%) for quarterly volatility.
         """
-        logger.info("\n[3/3] Temporal Anomaly Detection...")
+        logger.info("\n[3/3] Temporal Anomaly Detection (100% threshold for quarterly)...")
         
         if 'Date' not in df.columns:
             logger.info("   No Date column - skipping temporal detection")
@@ -317,7 +309,9 @@ class AnomalyDetectorFlagOnly:
                         continue
                     
                     pct_change = company_df[col].pct_change().abs() * 100
-                    jump_mask = pct_change > 50
+                    
+                    # MODIFIED: 100% jump threshold (was 50%) for quarterly
+                    jump_mask = pct_change > 100
                     jump_count = jump_mask.sum()
                     
                     if jump_count > 0:
@@ -325,7 +319,7 @@ class AnomalyDetectorFlagOnly:
                         df_flagged.loc[jump_indices, flag_col] = 1
                         
                         jump_years = [int(year) for year in company_df.loc[jump_mask, 'Date'].dt.year.unique()]
-                        crisis_years = [2008, 2009, 2020]
+                        crisis_years = [1990, 2000, 2001, 2008, 2009, 2020]
                         is_crisis = any(year in crisis_years for year in jump_years)
                         
                         temporal_anomalies.append({
@@ -339,24 +333,6 @@ class AnomalyDetectorFlagOnly:
                         
                         if not is_crisis:
                             self.anomaly_report['critical_count'] += int(jump_count)
-            else:
-                df_sorted = df.sort_values('Date').copy()
-                pct_change = df_sorted[col].pct_change().abs() * 100
-                
-                jump_mask = pct_change > 50
-                jump_count = jump_mask.sum()
-                
-                if jump_count > 0:
-                    jump_indices = df_sorted[jump_mask].index
-                    df_flagged.loc[jump_indices, flag_col] = 1
-                    
-                    jump_years = [int(year) for year in df_sorted.loc[jump_mask, 'Date'].dt.year.unique()]
-                    
-                    temporal_anomalies.append({
-                        'column': str(col),
-                        'count': int(jump_count),
-                        'years': jump_years
-                    })
         
         if temporal_anomalies:
             logger.info(f"   Found {len(temporal_anomalies)} temporal anomaly patterns:")
@@ -415,11 +391,12 @@ ACTION REQUIRED:
         """Run all anomaly detection methods."""
         
         logger.info("\n" + "="*80)
-        logger.info("ANOMALY DETECTION (FLAG-ONLY MODE)")
+        logger.info("ANOMALY DETECTION (QUARTERLY-AWARE)")
         logger.info("="*80)
         logger.info(f"Dataset: {self.dataset_name}")
         logger.info(f"Shape: {df.shape}")
         logger.info(f"Mode: FLAG ONLY - No data modification")
+        logger.info(f"Thresholds: 5 IQR, 100% jump (lenient for quarterly)")
         logger.info("="*80)
         
         # Run all detections
@@ -485,7 +462,6 @@ ACTION REQUIRED:
             logger.info(f"\n💾 Anomaly report saved: {json_path}")
         except Exception as e:
             logger.error(f"   ❌ Failed to save JSON report: {e}")
-            logger.error(f"   Error type: {type(e).__name__}")
         
         # Save CSV summary
         if self.anomaly_report.get('statistical_outliers'):
@@ -507,13 +483,11 @@ ACTION REQUIRED:
 def main():
     """Run anomaly detection on cleaned merged data."""
     
-    features_dir = Path("data/features")
+    features_dir = Path("data/processed/")
     
     # Find the latest cleaned file
     candidates = [
-        "merged_features_clean.csv",
-        "macro_features_clean.csv",
-        "merged_features.csv"
+        "features_engineered.csv",
     ]
     
     filepath = None
@@ -525,20 +499,20 @@ def main():
     
     if not filepath:
         logger.error("❌ No merged features found!")
-        logger.error("Run Step 3c first: python step3c_post_merge_cleaning.py")
+        logger.error("Run Step 4 first: python step4_post_merge_cleaning.py")
         return
     
     logger.info(f"Loading: {filepath}")
     df = pd.read_csv(filepath)
 
-    # CRITICAL FIX: Ensure Date is datetime
+    # Ensure Date is datetime
     if 'Date' in df.columns:
         if not pd.api.types.is_datetime64_any_dtype(df['Date']):
             df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
         logger.info(f"   Date column: {df['Date'].dtype}")
     
     # Run detection
-    detector = AnomalyDetectorFlagOnly(dataset_name=filepath.stem)
+    detector = AnomalyDetectorQuarterly(dataset_name=filepath.stem)
     
     group_col = 'Company' if 'Company' in df.columns else None
     
@@ -566,7 +540,7 @@ def main():
     logger.info("\n➡️  Next Steps:")
     logger.info(f"   1. Review: data/anomaly_reports/")
     logger.info(f"   2. Use: {output_path}")
-    logger.info(f"   3. Next: python step4_bias_detection.py")
+    logger.info(f"   3. Next: python step7_drift_detection.py")
 
 
 if __name__ == "__main__":

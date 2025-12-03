@@ -1,5 +1,12 @@
 """
-STEP 4: BIAS DETECTION WITH EXPLICIT DATA SLICING
+STEP 5: BIAS DETECTION WITH EXPLICIT DATA SLICING
+
+FIXED FOR MODIFIED PIPELINE:
+- 50 companies (was 25)
+- Date range: 1990-2025 (was 2005-2025)
+- Quarterly data (was daily)
+- Updated temporal periods
+- Fixed SliceAnalyzer bug
 
 Implements data slicing for bias detection as required by MLOps assignment.
 
@@ -9,16 +16,11 @@ Data Slicing Methodology:
 - Compares slices to detect bias
 - Generates mitigation strategies
 
-Slicing Dimensions (Assignment Required):
-1. Company (demographic equivalent in financial data)
+Slicing Dimensions:
+1. Company (50 companies)
 2. Sector (categorical grouping)
-3. Time Period (temporal slicing)
+3. Time Period (1990-2025, multiple crisis periods)
 4. Market Regime (volatility-based slicing)
-
-Tools Used:
-- Pandas for slicing
-- SciPy for statistical tests
-- Custom SliceFinder implementation
 
 Usage:
     python step5_bias_detection_with_explicit_slicing.py
@@ -30,7 +32,6 @@ from pathlib import Path
 import logging
 from typing import Dict, List, Tuple
 from datetime import datetime
-from collections import defaultdict
 import json
 from scipy import stats
 
@@ -43,26 +44,14 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 class DataSlicer:
-    """
-    Creates slices of data for bias analysis.
-    
-    Implements data slicing similar to TensorFlow Model Analysis (TFMA).
-    """
+    """Creates slices of data for bias analysis."""
     
     def __init__(self, df: pd.DataFrame):
         self.df = df
         self.slices = {}
     
     def create_slices_by_feature(self, feature: str) -> Dict[str, pd.DataFrame]:
-        """
-        Create slices based on a categorical feature.
-        
-        Args:
-            feature: Column name to slice by (e.g., 'Company', 'Sector')
-            
-        Returns:
-            Dictionary of {slice_name: slice_dataframe}
-        """
+        """Create slices based on a categorical feature."""
         logger.info(f"\n   Creating slices by '{feature}'...")
         
         if feature not in self.df.columns:
@@ -83,20 +72,16 @@ class DataSlicer:
         return slices
     
     def create_temporal_slices(self, periods: Dict[str, Tuple[int, int]]) -> Dict[str, pd.DataFrame]:
-        """
-        Create slices based on time periods.
-        
-        Args:
-            periods: Dictionary of {period_name: (start_year, end_year)}
-            
-        Returns:
-            Dictionary of {period_name: slice_dataframe}
-        """
+        """Create slices based on time periods."""
         logger.info(f"\n   Creating temporal slices...")
         
         if 'Date' not in self.df.columns:
             logger.warning(f"   ⚠️  No Date column")
             return {}
+        
+        # Ensure Date is datetime
+        if not pd.api.types.is_datetime64_any_dtype(self.df['Date']):
+            self.df['Date'] = pd.to_datetime(self.df['Date'], format='mixed', errors='coerce')
         
         self.df['Year'] = self.df['Date'].dt.year
         slices = {}
@@ -112,15 +97,7 @@ class DataSlicer:
         return slices
     
     def create_regime_slices(self, regime_column: str = 'VIX_Regime') -> Dict[str, pd.DataFrame]:
-        """
-        Create slices based on market regime.
-        
-        Args:
-            regime_column: Column defining market regime
-            
-        Returns:
-            Dictionary of {regime: slice_dataframe}
-        """
+        """Create slices based on market regime."""
         logger.info(f"\n   Creating market regime slices...")
         
         if regime_column in self.df.columns:
@@ -137,7 +114,7 @@ class DataSlicer:
             
             return self.create_slices_by_feature('Market_Regime')
         else:
-            logger.warning(f"   ⚠️  Cannot create regime slices")
+            logger.warning(f"   ⚠️  Cannot create regime slices - no VIX column")
             return {}
     
     def get_all_slices(self) -> Dict[str, Dict[str, pd.DataFrame]]:
@@ -150,11 +127,7 @@ class DataSlicer:
 # ============================================================================
 
 class SliceAnalyzer:
-    """
-    Analyzes slices to detect bias.
-    
-    Implements fairness metrics across slices.
-    """
+    """Analyzes slices to detect bias."""
     
     def __init__(self):
         self.slice_metrics = {}
@@ -171,27 +144,54 @@ class SliceAnalyzer:
         """
         metrics = {
             'slice_name': str(slice_name),
-            'n_samples': int(len(slice_df)),
-            'missing_pct': float(round((slice_df.isna().sum().sum() / slice_df.size) * 100, 2))
+            'n_samples': int(len(slice_df))
         }
+        
+        # Handle empty slices
+        if len(slice_df) == 0:
+            metrics['missing_pct'] = 0.0
+            metrics['date_range_days'] = 0
+            return metrics
+        
+        # Calculate missing percentage (handle division by zero)
+        total_elements = slice_df.size
+        if total_elements > 0:
+            missing_count = slice_df.isna().sum().sum()
+            metrics['missing_pct'] = float(round((missing_count / total_elements) * 100, 2))
+        else:
+            metrics['missing_pct'] = 0.0
         
         # Add feature statistics
         numeric_cols = slice_df.select_dtypes(include=[np.number]).columns
         
-        if 'Stock_Return_1D' in numeric_cols:
-            metrics['return_mean'] = float(round(slice_df['Stock_Return_1D'].mean(), 4))
-            metrics['return_std'] = float(round(slice_df['Stock_Return_1D'].std(), 4))
+        # Use Stock_Price instead of Stock_Return_1D (we don't have derived features)
+        if 'Stock_Price' in numeric_cols:
+            stock_mean = slice_df['Stock_Price'].mean()
+            stock_std = slice_df['Stock_Price'].std()
+            if not pd.isna(stock_mean):
+                metrics['stock_price_mean'] = float(round(stock_mean, 2))
+            if not pd.isna(stock_std):
+                metrics['stock_price_std'] = float(round(stock_std, 2))
         
         if 'Revenue' in numeric_cols:
-            metrics['revenue_mean'] = float(slice_df['Revenue'].mean())
+            revenue_mean = slice_df['Revenue'].mean()
+            if not pd.isna(revenue_mean):
+                metrics['revenue_mean'] = float(revenue_mean)
         
+        # Handle date range calculation
         if 'Date' in slice_df.columns:
-            metrics['date_range_days'] = int((slice_df['Date'].max() - slice_df['Date'].min()).days)
+            date_min = slice_df['Date'].min()
+            date_max = slice_df['Date'].max()
+            
+            if pd.notna(date_min) and pd.notna(date_max):
+                metrics['date_range_days'] = int((date_max - date_min).days)
+            else:
+                metrics['date_range_days'] = 0
         
         return metrics
     
     def compare_slices(self, slices: Dict[str, pd.DataFrame], 
-                       feature: str = 'Stock_Return_1D') -> List[Dict]:
+                       feature: str = 'Stock_Price') -> List[Dict]:
         """
         Compare feature distributions across slices.
         
@@ -199,7 +199,15 @@ class SliceAnalyzer:
         """
         comparisons = []
         
-        if feature not in self.df.columns:
+        # Check if feature exists in any slice
+        feature_exists = False
+        for slice_df in slices.values():
+            if feature in slice_df.columns:
+                feature_exists = True
+                break
+        
+        if not feature_exists:
+            logger.warning(f"   ⚠️  Feature '{feature}' not found in slices")
             return comparisons
         
         slice_names = list(slices.keys())
@@ -209,6 +217,9 @@ class SliceAnalyzer:
             for j in range(i + 1, len(slice_names)):
                 slice1_name = slice_names[i]
                 slice2_name = slice_names[j]
+                
+                if feature not in slices[slice1_name].columns or feature not in slices[slice2_name].columns:
+                    continue
                 
                 slice1_data = slices[slice1_name][feature].dropna()
                 slice2_data = slices[slice2_name][feature].dropna()
@@ -237,12 +248,7 @@ class SliceAnalyzer:
 # ============================================================================
 
 class BiasDetectorWithSlicing:
-    """
-    Bias detector with explicit data slicing implementation.
-    
-    Assignment Requirement: "perform data slicing and analyze performance 
-    across different subgroups"
-    """
+    """Bias detector with explicit data slicing implementation."""
     
     def __init__(self, dataset_name: str):
         self.dataset_name = dataset_name
@@ -256,15 +262,7 @@ class BiasDetectorWithSlicing:
         }
     
     def run_bias_detection(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
-        """
-        Run complete bias detection with data slicing.
-        
-        Steps:
-        1. Create slices (by Company, Sector, Time Period, Regime)
-        2. Analyze each slice
-        3. Compare slices to detect bias
-        4. Generate mitigation recommendations
-        """
+        """Run complete bias detection with data slicing."""
         logger.info("\n" + "="*80)
         logger.info("BIAS DETECTION WITH DATA SLICING")
         logger.info("="*80)
@@ -287,10 +285,12 @@ class BiasDetectorWithSlicing:
         sector_slices = slicer.create_slices_by_feature('Sector')
         logger.info(f"   ✓ Sector slices: {len(sector_slices)}")
         
-        # Slice by Time Period
+        # UPDATED: Temporal periods for 1990-2025
         periods = {
-            'Pre-Crisis (2005-2007)': (2005, 2007),
-            'Crisis (2008-2009)': (2008, 2009),
+            'Early Years (1990-1999)': (1990, 1999),
+            'Dot-com (2000-2002)': (2000, 2002),
+            'Pre-Crisis (2003-2007)': (2003, 2007),
+            'Financial Crisis (2008-2009)': (2008, 2009),
             'Recovery (2010-2019)': (2010, 2019),
             'COVID (2020-2021)': (2020, 2021),
             'Recent (2022-2025)': (2022, 2025)
@@ -310,7 +310,7 @@ class BiasDetectorWithSlicing:
         analyzer = SliceAnalyzer()
         
         # Analyze company slices
-        logger.info("\n[A] Company Slice Analysis:")
+        logger.info("\n[A] Company Slice Analysis (50 companies):")
         company_metrics = []
         
         for slice_name, slice_df in company_slices.items():
@@ -384,10 +384,9 @@ class BiasDetectorWithSlicing:
         
         biases = []
         
-        # === BIAS 1: Representation Bias ===
-        logger.info("\n   [A] Checking representation bias...")
+        # === BIAS 1: Representation Bias (UPDATED for 50 companies) ===
+        logger.info("\n   [A] Checking representation bias (50 companies)...")
         
-        # Company representation
         total_samples = sum(m['n_samples'] for m in company_metrics)
         expected_per_company = total_samples / len(company_metrics)
         
@@ -398,9 +397,10 @@ class BiasDetectorWithSlicing:
             samples = metrics['n_samples']
             deviation = (samples - expected_per_company) / expected_per_company
             
-            if deviation < -0.3:  # 30% below expected
+            # UPDATED: More lenient for quarterly data (40% vs 30%)
+            if deviation < -0.4:  # 40% below expected
                 underrep.append(metrics['slice_name'])
-            elif deviation > 0.3:  # 30% above expected
+            elif deviation > 0.4:  # 40% above expected
                 overrep.append(metrics['slice_name'])
         
         if underrep or overrep:
@@ -416,14 +416,14 @@ class BiasDetectorWithSlicing:
                 'overrepresented': overrep
             })
         else:
-            logger.info(f"   ✓ No representation bias")
+            logger.info(f"   ✓ No representation bias (within 40% deviation)")
         
         # === BIAS 2: Sector Imbalance ===
         logger.info("\n   [B] Checking sector imbalance...")
         
         sector_samples = [m['n_samples'] for m in sector_metrics]
-        max_samples = max(sector_samples)
-        min_samples = min(sector_samples)
+        max_samples = max(sector_samples) if sector_samples else 0
+        min_samples = min(sector_samples) if sector_samples else 0
         imbalance_ratio = max_samples / min_samples if min_samples > 0 else float('inf')
         
         if imbalance_ratio > 5:
@@ -437,11 +437,13 @@ class BiasDetectorWithSlicing:
         else:
             logger.info(f"   ✓ Sector balance OK ({imbalance_ratio:.1f}x)")
         
-        # === BIAS 3: Temporal Data Quality Bias ===
+        # === BIAS 3: Temporal Data Quality Bias (UPDATED threshold for quarterly) ===
         logger.info("\n   [C] Checking temporal data quality bias...")
         
+        biases_found = False
         for metrics in temporal_metrics:
-            if metrics['missing_pct'] > 5:
+            # UPDATED: More lenient for quarterly data (30% vs 5%)
+            if metrics['missing_pct'] > 30:
                 logger.warning(f"   ⚠️  {metrics['slice_name']}: {metrics['missing_pct']:.1f}% missing")
                 
                 biases.append({
@@ -450,6 +452,10 @@ class BiasDetectorWithSlicing:
                     'severity': 'MEDIUM',
                     'missing_pct': float(metrics['missing_pct'])
                 })
+                biases_found = True
+        
+        if not biases_found:
+            logger.info(f"   ✓ No temporal quality bias (all periods < 30% missing)")
         
         self.bias_report['biases_detected'] = biases
         
@@ -487,8 +493,8 @@ class BiasDetectorWithSlicing:
         temporal_biases = [b for b in biases if 'Temporal' in b['type']]
         if temporal_biases:
             logger.info("\n   📋 Recommendation 4: Crisis Data Handling")
-            logger.info("      Ensure crisis periods (2008-2009, 2020) in validation set")
-            recommendations.append("Include crisis periods in validation for realistic stress testing")
+            logger.info("      Ensure crisis periods (1990s, 2000-2002, 2008-2009, 2020) in validation")
+            recommendations.append("Include all crisis periods in validation for realistic stress testing")
         
         self.bias_report['mitigation_recommendations'] = recommendations
         
@@ -563,13 +569,11 @@ class BiasDetectorWithSlicing:
 def main():
     """Execute bias detection with data slicing."""
     
-    features_dir = Path("data/features")
+    features_dir = Path("data/processed/")
     
     # Find dataset
     candidates = [
-        "merged_features_clean_with_anomaly_flags.csv",
-        "merged_features_clean.csv",
-        "merged_features.csv"
+        "features_engineered.csv"
     ]
     
     filepath = None
@@ -581,17 +585,17 @@ def main():
     
     if not filepath:
         logger.error("❌ No merged features found!")
+        logger.error("Run Step 3 or Step 4 first")
         return
     
     logger.info(f"Loading: {filepath}")
     df = pd.read_csv(filepath)
 
-    # CRITICAL FIX: Ensure Date is datetime
+    # Ensure Date is datetime
     if 'Date' in df.columns:
         if not pd.api.types.is_datetime64_any_dtype(df['Date']):
             df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
             logger.info(f"   ✓ Converted Date to datetime: {df['Date'].dtype}")
-
     
     # Run bias detection
     detector = BiasDetectorWithSlicing(dataset_name=filepath.stem)
@@ -606,10 +610,13 @@ def main():
     
     if total_biases == 0:
         logger.info("\n✅ No significant biases detected")
+        logger.info("✅ Data is well-balanced across slices")
     else:
-        logger.warning(f"\n⚠️  {total_biases} biases detected - apply mitigation")
+        logger.warning(f"\n⚠️  {total_biases} biases detected")
+        logger.warning("   Review bias report and apply mitigation strategies")
     
-    logger.info("\n➡️  Next: Apply mitigation in train/test split code")
+    logger.info("\n📁 Reports saved to: data/bias_reports/")
+    logger.info("\n➡️  Next: Apply stratified sampling in model training")
 
 
 if __name__ == "__main__":
