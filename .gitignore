@@ -58,3 +58,7 @@ data/drift_reports/*.json
 *.json
 .pytest_cache/
 mlruns/
+
+*.png
+*.pkl
+*.pth

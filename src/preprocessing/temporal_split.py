@@ -12,8 +12,10 @@ from datetime import datetime
 def create_date_based_splits(
     input_file: str,
     output_dir: str,
-    train_end_date: str = '2019-12-31',
-    val_end_date: str = '2022-12-31',
+    # train_end_date: str = '2019-12-31',
+    # val_end_date: str = '2022-12-31',
+    train_end_date: str = '2015-12-31',
+    val_end_date: str = '2019-12-31',
     date_column: str = 'Date'
 ):
     """
@@ -300,7 +302,7 @@ if __name__ == "__main__":
     # ========================================
     
     # Input file (quarterly data with targets)
-    input_file = 'data/features/quarterly_data_with_targets.csv'
+    input_file = 'data/features/quarterly_data_with_targets_clean.csv'
     
     # Output directory
     output_dir = 'data/splits'
@@ -310,8 +312,11 @@ if __name__ == "__main__":
     # ========================================
     
     # Option 1: Your original proposal (with fix)
-    train_end_date = '2019-12-31'  # Train: 1990-2019
-    val_end_date = '2022-12-31'    # Val: 2020-2022 (COVID period)
+    # train_end_date = '2019-12-31'  # Train: 1990-2019
+    # val_end_date = '2022-12-31'    # Val: 2020-2022 (COVID period)
+    # Updated split boundaries
+    train_end_date = '2015-12-31'  # Train: 1990-2015
+    val_end_date = '2019-12-31'    # Val: 2016-2019
     # Test: 2023-present (most recent)
     
     # Option 2: More recent test data

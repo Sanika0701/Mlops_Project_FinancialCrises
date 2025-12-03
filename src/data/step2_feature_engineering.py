@@ -72,7 +72,6 @@ class FeatureEngineer:
         
         logger.info(f"  ✓ Created {feature_count} lagged features")
         logger.info(f"    Example: Revenue_lag_1q (previous quarter revenue)")
-        logger.info(f"    NOTE: Original columns preserved ({len([c for c in lag_cols if c in df.columns])} columns)")
         
         return df
     
@@ -105,7 +104,6 @@ class FeatureEngineer:
         
         logger.info(f"  ✓ Created {feature_count} growth features")
         logger.info(f"    Example: Revenue_growth_1q (QoQ revenue growth %)")
-        logger.info(f"    NOTE: Original columns preserved ({len([c for c in growth_cols if c in df.columns])} columns)")
         
         return df
     
@@ -263,7 +261,6 @@ class FeatureEngineer:
             feature_count += 1
         
         logger.info(f"  ✓ Created {feature_count} financial ratio features")
-        logger.info(f"    NOTE: All original financial columns preserved")
         
         return df
     
@@ -308,7 +305,6 @@ class FeatureEngineer:
         
         logger.info(f"  ✓ Created {feature_count} rolling window features")
         logger.info(f"    Captures 4-quarter trends and volatility")
-        logger.info(f"    NOTE: Original columns preserved")
         
         return df
     
@@ -510,7 +506,6 @@ class FeatureEngineer:
                 feature_count += 1
         
         logger.info(f"  ✓ Created {feature_count} normalized features")
-        logger.info(f"    NOTE: Original columns preserved (log_* and *_zscore are additions)")
         
         return df
     
@@ -570,55 +565,23 @@ class FeatureEngineer:
             return None
         
         original_cols = df.shape[1]
-        original_columns = df.columns.tolist()  # Save original column names
-        logger.info(f"📋 Preserving {len(original_columns)} original columns")
         
         # Execute feature engineering steps
         logger.info("\n" + "="*80)
-        logger.info("CREATING FEATURES (WITH COLUMN TRACKING)")
+        logger.info("CREATING FEATURES")
         logger.info("="*80)
         
-        # Track column count at each step
-        def log_columns(step_name, dataframe):
-            logger.info(f"   After {step_name}: {dataframe.shape[1]} columns")
-            return dataframe
-        
-        df = log_columns("Initial load", df)
         df = self.calculate_eps(df)  # Calculate EPS FIRST
-        df = log_columns("EPS calculation", df)
         df = self.create_lagged_features(df)
-        df = log_columns("Lagged features", df)
         df = self.create_growth_features(df)
-        df = log_columns("Growth features", df)
         df = self.create_financial_ratios(df)  # Now can use EPS for P/E ratio
-        df = log_columns("Financial ratios", df)
         df = self.create_rolling_features(df)
-        df = log_columns("Rolling features", df)
         df = self.create_momentum_features(df)
-        df = log_columns("Momentum features", df)
         df = self.create_crisis_indicators(df)
-        df = log_columns("Crisis indicators", df)
         df = self.create_relative_features(df)
-        df = log_columns("Relative features", df)
         df = self.create_interaction_features(df)
-        df = log_columns("Interaction features", df)
         df = self.create_normalized_features(df)
-        df = log_columns("Normalized features", df)
         df = self.create_target_variables(df)
-        df = log_columns("Target variables", df)
-        
-        # CRITICAL: Verify no columns were accidentally dropped
-        logger.info("\n🔍 Verifying column preservation...")
-        current_columns = set(df.columns)
-        original_set = set(original_columns)
-        
-        missing = original_set - current_columns
-        if missing:
-            logger.error(f"❌ ERROR: {len(missing)} original columns were lost during processing!")
-            logger.error(f"   Lost columns: {sorted(list(missing))[:20]}")
-            logger.error(f"   This should not happen - check feature engineering methods!")
-        else:
-            logger.info(f"✅ All {len(original_columns)} original columns successfully preserved!")
         
         # Summary
         new_cols = df.shape[1]
