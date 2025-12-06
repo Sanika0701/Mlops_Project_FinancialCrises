@@ -60,3 +60,35 @@ optuna>=3.5.0
 plotly>=5.18.0
 optuna-integration[xgboost]>=3.5.0
 lightgbm==4.1.0
+# ============================================================================
+# Additional packages for complete MLOps stack
+# ============================================================================
+
+# Weak Supervision (Model 3 - Anomaly Detection)
+snorkel==0.9.9
+
+# Imbalanced Learning
+imbalanced-learn>=0.11.0
+
+# Workflow Orchestration
+apache-airflow>=2.7.0
+
+# Model Serving & API
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.5.0
+
+# Configuration Management
+PyYAML>=6.0.0
+
+# Progress & Date Utilities
+tqdm>=4.66.0
+python-dateutil>=2.9.0
+
+# Deep Learning Visualization
+tensorboard>=2.20.0
+tensorboard-data-server>=0.7.0
+
+# Testing & Quality
+pytest>=7.4.0
+pytest-cov>=4.1.0
