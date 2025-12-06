@@ -62,3 +62,11 @@ mlruns/
 *.png
 *.pkl
 *.pth
+# Airflow variables
+configs/airflow_variables.json
+
+# Outputs
+outputs/
+
+# Virtual environments
+venv_snorkel/
