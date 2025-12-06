@@ -2,9 +2,11 @@
 """
 ============================================================================
 Production-Grade Snorkel Weak Supervision Labeling Pipeline
+WITH GCS SUPPORT
 ============================================================================
 Author: Parth Saraykar
 Purpose: Generate weak supervision labels using EDA-derived thresholds
+         Supports loading from and uploading to Google Cloud Storage
 ============================================================================
 """
 
@@ -20,6 +22,10 @@ import traceback
 from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+# Add project root to path (ONCE)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from src.utils.gcs_data_loader import GCSDataLoader, GCSOutputUploader
 
 from snorkel.labeling import PandasLFApplier, LFAnalysis
 from snorkel.labeling.model import LabelModel
@@ -80,6 +86,11 @@ class SnorkelConfig:
     
     # Logging
     log_level: str
+    
+    # GCS config (NEW)
+    source_type: str = "local"
+    upload_to_gcs: bool = False
+    gcs_config: Optional[Dict] = None
 
 
 def load_config(config_path: str = "configs/eda_config.yaml") -> SnorkelConfig:
@@ -132,7 +143,12 @@ def load_config(config_path: str = "configs/eda_config.yaml") -> SnorkelConfig:
             validation_config=snorkel_config['validation'],
             
             # Logging
-            log_level=logging_config['level']
+            log_level=logging_config['level'],
+            
+            # GCS (NEW)
+            source_type=snorkel_config.get('source_type', 'local'),
+            upload_to_gcs=snorkel_config['output'].get('upload_to_gcs', False),
+            gcs_config=snorkel_config.get('data', {}).get('gcs')
         )
         
         return config
@@ -203,20 +219,30 @@ def setup_directories(config: SnorkelConfig, logger: logging.Logger) -> None:
 
 
 # ============================================================================
-# DATA LOADING
+# DATA LOADING (WITH GCS SUPPORT)
 # ============================================================================
 
-def load_data(config: SnorkelConfig, logger: logging.Logger) -> pd.DataFrame:
-    """Load and prepare feature-engineered dataset"""
-    logger.info(f"Loading data from: {config.input_path}")
+def load_data(config: SnorkelConfig, logger: logging.Logger, full_config: Dict) -> pd.DataFrame:
+    """Load and prepare feature-engineered dataset from GCS or local"""
+    logger.info("="*80)
+    logger.info(f"Data source: {config.source_type.upper()}")
+    logger.info("="*80)
     
     try:
-        data_path = Path(config.input_path)
-        if not data_path.exists():
-            raise FileNotFoundError(f"Data file not found: {config.input_path}")
-        
-        df = pd.read_csv(data_path)
-        logger.info(f"✓ Loaded {len(df):,} samples with {len(df.columns)} features")
+        if config.source_type == 'gcs':
+            # Load from GCS
+            logger.info("Loading feature-engineered data from GCS...")
+            gcs_loader = GCSDataLoader(full_config['snorkel'], logger)
+            df = gcs_loader.load_csv('input_path', cache_local=True)
+        else:
+            # Load from local
+            logger.info(f"Loading from local: {config.input_path}")
+            data_path = Path(config.input_path)
+            if not data_path.exists():
+                raise FileNotFoundError(f"Data file not found: {config.input_path}")
+            
+            df = pd.read_csv(data_path)
+            logger.info(f"✓ Loaded {len(df):,} samples with {len(df.columns)} features")
         
         # Parse date and add temporal features
         df[config.date_column] = pd.to_datetime(df[config.date_column])
@@ -528,6 +554,13 @@ def save_results(
         df_output['prob_not_at_risk'] = probs[:, 0]
         df_output['prob_at_risk'] = probs[:, 1]
         
+        # Map labels to readable names
+        df_output['AT_RISK'] = df_output['snorkel_label'].map({
+            config.abstain: -1,
+            config.not_at_risk: 0,
+            config.at_risk: 1
+        })
+        
         # Save complete labeled dataset
         output_path = Path(config.data_dir) / config.labeled_data_filename
         df_output.to_csv(output_path, index=False)
@@ -762,7 +795,7 @@ Top 10 LFs by Coverage:
 
 
 # ============================================================================
-# MAIN PIPELINE
+# MAIN PIPELINE CLASS
 # ============================================================================
 
 class SnorkelPipeline:
@@ -770,6 +803,10 @@ class SnorkelPipeline:
     
     def __init__(self, config_path: str = "configs/eda_config.yaml"):
         """Initialize pipeline with configuration"""
+        # Load full config dict for GCS support
+        with open(config_path, 'r') as f:
+            self.full_config = yaml.safe_load(f)
+        
         self.config = load_config(config_path)
         
         logger_instance = SnorkelLogger(log_level=self.config.log_level)
@@ -784,16 +821,16 @@ class SnorkelPipeline:
         self.results = {}
     
     def run(self) -> bool:
-        """Execute complete Snorkel pipeline"""
+        """Execute complete Snorkel pipeline with GCS support"""
         try:
             self.logger.info("Starting Snorkel pipeline execution...")
             
-            # Step 1: Load data
+            # Step 1: Load data (GCS or local)
             self.logger.info("\n" + "="*80)
             self.logger.info("STEP 1: DATA LOADING")
             self.logger.info("="*80)
             
-            df = load_data(self.config, self.logger)
+            df = load_data(self.config, self.logger, self.full_config)
             self.results['dataframe'] = df
             
             # Step 2: Get enabled labeling functions
@@ -868,6 +905,53 @@ class SnorkelPipeline:
                                    self.config, self.logger)
             print("\n" + report)
             
+            # ================================================================
+            # STEP 11: UPLOAD TO GCS (NEW)
+            # ================================================================
+            
+            if self.config.upload_to_gcs:
+                self.logger.info("\n" + "="*80)
+                self.logger.info("STEP 11: UPLOADING OUTPUTS TO GCS")
+                self.logger.info("="*80)
+                
+                try:
+                    uploader = GCSOutputUploader(self.full_config['snorkel'], self.logger)
+                    
+                    # Upload labeled data (snorkel_labeled_only.csv)
+                    labeled_only_path = Path(self.config.data_dir) / self.config.labeled_only_filename
+                    self.logger.info("\n1. Uploading labeled data...")
+                    uploader.upload_labeled_data(str(labeled_only_path))
+                    
+                    # Upload full labeled data
+                    labeled_full_path = Path(self.config.data_dir) / self.config.labeled_data_filename
+                    if labeled_full_path.exists():
+                        self.logger.info("\n2. Uploading full labeled dataset...")
+                        uploader.upload_file(str(labeled_full_path), "outputs/snorkel/data")
+                    
+                    # Upload LF summary
+                    lf_summary_path = Path(self.config.data_dir) / self.config.lf_summary_filename
+                    if lf_summary_path.exists():
+                        self.logger.info("\n3. Uploading LF summary...")
+                        uploader.upload_file(str(lf_summary_path), "outputs/snorkel/data")
+                    
+                    # Upload plots
+                    if Path(self.config.plots_dir).exists():
+                        self.logger.info("\n4. Uploading plots...")
+                        uploader.upload_directory(self.config.plots_dir, "outputs/snorkel/plots")
+                    
+                    # Upload reports
+                    if Path(self.config.reports_dir).exists():
+                        self.logger.info("\n5. Uploading reports...")
+                        uploader.upload_directory(self.config.reports_dir, "outputs/snorkel/reports")
+                    
+                    bucket = self.full_config['snorkel']['data']['gcs']['bucket']
+                    self.logger.info("\n✅ All Snorkel outputs uploaded to GCS!")
+                    self.logger.info(f"   Labeled data: gs://{bucket}/outputs/snorkel/data/{self.config.labeled_only_filename}")
+                    
+                except Exception as e:
+                    self.logger.warning(f"GCS upload failed: {e}")
+                    self.logger.info("Continuing with local files only")
+            
             self.logger.info("\n" + "="*80)
             self.logger.info("✓ SNORKEL PIPELINE COMPLETED SUCCESSFULLY!")
             self.logger.info("="*80)
@@ -889,7 +973,7 @@ class SnorkelPipeline:
 # ============================================================================
 
 def main():
-    """Main entry point"""
+    """Main entry point with GCS support"""
     try:
         pipeline = SnorkelPipeline(config_path="configs/eda_config.yaml")
         success = pipeline.run()
@@ -901,6 +985,16 @@ def main():
             print("  - outputs/snorkel/plots/    - Visualizations")
             print("  - outputs/snorkel/reports/  - Summary report")
             print("  - logs/                     - Execution logs")
+            
+            # Check if uploaded to GCS
+            with open("configs/eda_config.yaml", 'r') as f:
+                config = yaml.safe_load(f)
+            
+            if config['snorkel']['output'].get('upload_to_gcs', False):
+                bucket = config['snorkel']['data']['gcs']['bucket']
+                print(f"\n✓ Outputs also uploaded to GCS:")
+                print(f"  gs://{bucket}/outputs/snorkel/")
+            
             sys.exit(0)
         else:
             print("\n✗ Snorkel pipeline failed. Check logs for details.")

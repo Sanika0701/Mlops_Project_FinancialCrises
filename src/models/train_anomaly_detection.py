@@ -44,6 +44,11 @@ import shap
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from src.utils.gcs_data_loader import GCSDataLoader, GCSOutputUploader
+
 warnings.filterwarnings('ignore')
 
 
@@ -86,27 +91,47 @@ def setup_logger():
 # STEP 1: LOAD DATA FROM PIPELINE
 # ============================================================================
 
+
+
 class DataLoader:
-    """Load data from Snorkel labeling pipeline"""
+    """Load data from Snorkel labeling pipeline - supports GCS and local"""
     
     def __init__(self, config: Config, logger: logging.Logger):
         self.config = config
         self.logger = logger
     
     def load_labeled_data(self) -> pd.DataFrame:
-        """Load labeled data from Snorkel pipeline output"""
+        """Load labeled data from Snorkel pipeline output (GCS or local)"""
         self.logger.info("="*80)
         self.logger.info("STEP 1: LOADING DATA FROM PIPELINE")
         self.logger.info("="*80)
         
-        data_path = self.config['data']['labeled_data_path']
-        self.logger.info(f"Loading from: {data_path}")
+        source_type = self.config['data'].get('source_type', 'local')
+        self.logger.info(f"Data source: {source_type.upper()}")
         
-        df = pd.read_csv(data_path)
+        if source_type == 'gcs':
+            # Load from GCS
+            try:
+                from src.utils.gcs_data_loader import GCSDataLoader
+                gcs_loader = GCSDataLoader(self.config.cfg['data'], self.logger)
+                df = gcs_loader.load_csv('labeled_data_path', cache_local=True)
+            except Exception as e:
+                self.logger.error(f"GCS load failed: {e}")
+                self.logger.info("Falling back to local file...")
+                data_path = self.config['data']['local']['labeled_data_path']
+                df = pd.read_csv(data_path)
+        else:
+            # Load from local
+            data_path = self.config['data']['local']['labeled_data_path']
+            self.logger.info(f"Loading from: {data_path}")
+            df = pd.read_csv(data_path)
+        
+        # Process dates (applies to BOTH GCS and local)
         df['Date'] = pd.to_datetime(df[self.config['data']['date_column']])
         df['Year'] = df['Date'].dt.year
         df['Quarter'] = df['Date'].dt.quarter
         
+        # Log statistics (applies to BOTH)
         self.logger.info(f"✓ Loaded {len(df):,} labeled samples")
         self.logger.info(f"  Date range: {df['Date'].min()} to {df['Date'].max()}")
         self.logger.info(f"  Companies: {df[self.config['data']['company_column']].nunique()}")
@@ -1581,14 +1606,58 @@ def main():
     )
     
     logger.info("\n" + "="*80)
-    logger.info("✓ TRAINING PIPELINE COMPLETED SUCCESSFULLY!")
+    logger.info("✓ TRAINING PIPELINE WITH ENSEMBLE COMPLETED SUCCESSFULLY!")
     logger.info("="*80)
+    
+    # ========================================================================
+    # STEP 13: UPLOAD OUTPUTS TO GCS (NEW)
+    # ========================================================================
+    
+    if config['output'].get('upload_to_gcs', False):
+        logger.info("\n" + "="*80)
+        logger.info("STEP 13: UPLOADING OUTPUTS TO GCS")
+        logger.info("="*80)
+        
+        from src.utils.gcs_data_loader import GCSOutputUploader
+        uploader = GCSOutputUploader(config.cfg, logger)
+        
+        # Upload all trained models
+        logger.info("\nUploading trained models...")
+        for model_name in results.keys():
+            if model_name != 'Weighted_Ensemble':
+                model_dir = Path(config['output']['models_dir']) / model_name
+                if model_dir.exists():
+                    uploader.upload_model_artifacts(model_name, str(model_dir))
+        
+        # Upload ensemble model
+        logger.info("\nUploading ensemble model...")
+        ensemble_dir = Path(config['output']['models_dir']) / "Ensemble"
+        if ensemble_dir.exists():
+            uploader.upload_ensemble(str(ensemble_dir))
+        
+        # Upload all outputs (plots, reports, results)
+        logger.info("\nUploading visualizations and reports...")
+        uploader.upload_outputs()
+        
+        # Upload labeled data from Snorkel
+        logger.info("\nUploading Snorkel labeled data...")
+        labeled_path = config['data']['local']['labeled_data_path']
+        uploader.upload_labeled_data(labeled_path)
+        
+        logger.info("\n All outputs uploaded to GCS!")
+        logger.info(f"   Bucket: gs://{config['data']['gcs']['bucket']}/")
+        logger.info(f"   Models: gs://{config['data']['gcs']['bucket']}/models/model3/")
+    
+    # Original view results section
     logger.info("\nView results:")
-    logger.info("  1. MLflow UI:      mlflow ui --port 5000")
-    logger.info("  2. Sensitivity plots:   outputs/models/plots/sensitivity_analysis.png")
-    logger.info("  2. Report:         cat outputs/models/reports/comprehensive_training_report.txt")
-    logger.info("  3. Visualizations: outputs/models/plots/")
-    logger.info("  4. Model artifacts: models/anomaly_detection/")
+    logger.info("  1. MLflow UI:           mlflow ui --port 5000")
+    logger.info("  2. Ensemble comparison: cat outputs/models/results/ensemble_comparison.csv")
+    logger.info("  3. Sensitivity plots:   outputs/models/plots/sensitivity_analysis.png")
+    logger.info("  4. Report:              cat outputs/models/reports/comprehensive_training_report.txt")
+    logger.info("  5. Visualizations:      outputs/models/plots/")
+    logger.info("  6. Ensemble model:      models/Ensemble/ensemble_model.pkl")
+    if config['output'].get('upload_to_gcs', False):
+        logger.info("  7. GCS Bucket:          gs://mlops-financial-stress-data/models/model3/")
 
 
 if __name__ == "__main__":

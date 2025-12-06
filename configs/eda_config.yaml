@@ -1,15 +1,29 @@
 eda:
+  # Data source configuration
+  source_type: "gcs"  # Options: "local" or "gcs"
+  
   data:
+    # Primary path (used by your current code)
     input_path: data/processed/features_engineered.csv
+    
+    # GCS configuration (for when source_type is "gcs")
+    gcs:
+      bucket: "mlops-financial-stress-data"
+      input_path: "data/processed/features_engineered.csv"
+    
+    # Column names
     date_column: Date
     crisis_flag_column: crisis_flag
     company_column: Company
     sector_column: Sector
+  
   output:
     base_dir: outputs/eda
     plots_dir: outputs/eda/plots
     data_dir: outputs/eda/data
     reports_dir: outputs/eda/reports
+    upload_to_gcs: true # Set to true when you want to upload
+  
   features:
     risk_features:
       financial_health:
@@ -35,6 +49,7 @@ eda:
       - CPI_last
       - Yield_Curve_Spread_mean
       - Federal_Funds_Rate_mean
+  
   analysis:
     crisis_rate_threshold:
       min: 1.0
@@ -47,17 +62,32 @@ eda:
       val_start_year: 2019
       val_end_year: 2021
       test_start_year: 2022
+  
   visualization:
     style: seaborn-v0_8-darkgrid
     dpi: 300
     figure_format: png
     color_palette: husl
+
 snorkel:
+  # Data source configuration
+  source_type: "gcs"  # Options: "local" or "gcs"
+  
   data:
+    # Primary path (used by your current code)
     input_path: data/processed/features_engineered.csv
+    
+    # GCS configuration (for when source_type is "gcs")
+    gcs:
+      bucket: "mlops-financial-stress-data"
+      input_path: "data/processed/features_engineered.csv"
+      output_labeled_path: "outputs/snorkel/data/snorkel_labeled_only.csv"
+    
+    # Column names
     date_column: Date
     company_column: Company
     sector_column: Sector
+  
   output:
     base_dir: outputs/snorkel
     plots_dir: outputs/snorkel/plots
@@ -67,11 +97,14 @@ snorkel:
     labeled_only_filename: snorkel_labeled_only.csv
     lf_summary_filename: lf_summary.csv
     lf_analysis_filename: lf_detailed_analysis.csv
+    upload_to_gcs: true  # Set to true when you want to upload
+  
   labels:
     abstain: -1
     not_at_risk: 0
     at_risk: 1
     cardinality: 2
+  
   thresholds:
     # Market stress
     vix_high: 30
@@ -108,7 +141,7 @@ snorkel:
     
     # Composite
     perfect_storm_conditions: 3
-    
+  
   label_model:
     epochs: 500
     learning_rate: 0.01
@@ -118,6 +151,7 @@ snorkel:
     optimizer_config:
       lr: 0.01
       weight_decay: 0.0
+  
   quality:
     min_coverage: 0.6
     max_conflicts: 0.6
@@ -125,6 +159,7 @@ snorkel:
     target_at_risk_rate_max: 0.05
     min_lf_coverage: 0.05
     max_lf_conflicts: 0.8
+  
   validation:
     crisis_periods:
       financial_crisis_2008:
@@ -147,6 +182,7 @@ snorkel:
       - 2016
       - 2017
       expected_at_risk_rate_max: 0.03
+  
   labeling_functions:
     categories:
       market_stress:
@@ -191,10 +227,12 @@ snorkel:
     - composite
     - historical
     - negative
+  
   metadata:
     thresholds_updated_at: '2025-11-18T16:12:07.494926'
     thresholds_source: auto_extracted_from_eda
     eda_comparison_file: outputs/eda/data/crisis_vs_normal_comparison.csv
+
 logging:
   level: INFO
   format: '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'

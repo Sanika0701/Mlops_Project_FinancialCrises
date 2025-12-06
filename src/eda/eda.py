@@ -24,6 +24,10 @@ import warnings
 import traceback
 from dataclasses import dataclass, asdict
 import json
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from src.utils.gcs_data_loader import GCSDataLoader, GCSOutputUploader
 
 warnings.filterwarnings('ignore')
 
@@ -1274,7 +1278,7 @@ class EDAPipeline:
 # ============================================================================
 
 def main():
-    """Main entry point"""
+    """Main entry point with GCS upload support"""
     try:
         # Initialize and run pipeline
         pipeline = EDAPipeline(config_path="configs/eda_config.yaml")
@@ -1283,10 +1287,55 @@ def main():
         if success:
             print("\n✓ EDA completed successfully!")
             print("Check the following directories for outputs:")
-            print("  - outputs/plots/     - Visualizations")
-            print("  - outputs/data/      - Analysis results (CSV)")
-            print("  - outputs/reports/   - Summary report")
-            print("  - logs/              - Execution logs")
+            print("  - outputs/eda/plots/     - Visualizations")
+            print("  - outputs/eda/data/      - Analysis results (CSV)")
+            print("  - outputs/eda/reports/   - Summary report")
+            print("  - logs/                  - Execution logs")
+            
+            # ================================================================
+            # UPLOAD OUTPUTS TO GCS (NEW)
+            # ================================================================
+            
+            # Load config to check if upload is enabled
+            import yaml
+            with open("configs/eda_config.yaml", 'r') as f:
+                config = yaml.safe_load(f)
+            
+            if config['eda']['output'].get('upload_to_gcs', False):
+                print("\n" + "="*80)
+                print("UPLOADING EDA OUTPUTS TO GCS")
+                print("="*80)
+                
+                import logging
+                logger = logging.getLogger(__name__)
+                
+                uploader = GCSOutputUploader(config['eda'], logger)
+                
+                # Upload automated thresholds
+                thresholds_file = "outputs/eda/data/automated_thresholds.json"
+                if Path(thresholds_file).exists():
+                    uploader.upload_file(thresholds_file, "outputs/eda/data")
+                    print("✓ Uploaded automated_thresholds.json")
+                
+                # Upload comparison data
+                comparison_file = "outputs/eda/data/crisis_vs_normal_comparison.csv"
+                if Path(comparison_file).exists():
+                    uploader.upload_file(comparison_file, "outputs/eda/data")
+                    print("✓ Uploaded crisis_vs_normal_comparison.csv")
+                
+                # Upload all plots
+                if Path("outputs/eda/plots").exists():
+                    uploader.upload_directory("outputs/eda/plots", "outputs/eda/plots")
+                    print("✓ Uploaded all EDA plots")
+                
+                # Upload all reports
+                if Path("outputs/eda/reports").exists():
+                    uploader.upload_directory("outputs/eda/reports", "outputs/eda/reports")
+                    print("✓ Uploaded all EDA reports")
+                
+                print("\n✅ All EDA outputs uploaded to GCS!")
+                print(f"   Location: gs://{config['eda']['data']['gcs']['bucket']}/outputs/eda/")
+            
             sys.exit(0)
         else:
             print("\n✗ EDA pipeline failed. Check logs for details.")
@@ -1297,6 +1346,7 @@ def main():
         sys.exit(1)
     except Exception as e:
         print(f"\n✗ Fatal error: {str(e)}")
+        import traceback
         traceback.print_exc()
         sys.exit(1)
 
