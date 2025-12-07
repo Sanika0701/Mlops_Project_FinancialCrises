@@ -129,6 +129,7 @@ jobs:
             echo "📤 Uploading splits to GCS..."
             gsutil -m cp data/splits/*.csv gs://${{ env.GCP_BUCKET }}/data/splits/
             gsutil cp data/features/quarterly_data_with_targets.csv gs://${{ env.GCP_BUCKET }}/data/features/
+            gsutil cp data/features/quarterly_data_with_targets_clean.csv gs://${{ env.GCP_BUCKET }}/data/features/ || echo "Clean file not found"  
             echo "✅ Uploaded to GCS"
           fi
         continue-on-error: true
