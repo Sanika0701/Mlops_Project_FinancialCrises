@@ -1,14 +1,14 @@
 """
-FEATURE ENGINEERING PIPELINE FOR CRISIS PREDICTION
-===================================================
+FEATURE ENGINEERING PIPELINE FOR CRISIS PREDICTION - WITH GCS
+==============================================================
 
 Creates features for:
 - M2: XGBoost + LSTM (Predictive model)
 - M3: Isolation Forest (Anomaly detector)
 - C1: SHAP Explainer (Interpretability)
 
-Input: quarterly_data_complete.csv (ONE ROW PER QUARTER PER COMPANY)
-Output: features_engineered.csv (with 150+ features)
+Input: quarterly_data_complete.csv from GCS (ONE ROW PER QUARTER PER COMPANY)
+Output: features_engineered.csv to GCS (with 150+ features)
 
 Author: Financial ML Pipeline
 Date: 2025
@@ -18,19 +18,109 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import logging
+from google.cloud import storage
+import io
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
 class FeatureEngineer:
-    """Engineer features for crisis prediction models."""
+    """Engineer features for crisis prediction models with GCS integration."""
     
-    def __init__(self, input_path='data/processed/quarterly_data_complete.csv',
-                 output_path='data/processed/features_engineered.csv'):
-        self.input_path = Path(input_path)
-        self.output_path = Path(output_path)
+    def __init__(self, 
+                 bucket_name='mlops-financial-stress-data',
+                 local_input_dir='data/processed',
+                 local_output_dir='data/processed',
+                 use_gcs=True):
         
+        self.bucket_name = bucket_name
+        self.local_input_dir = Path(local_input_dir)
+        self.local_output_dir = Path(local_output_dir)
+        self.use_gcs = use_gcs
+        
+        # Create local directories
+        self.local_input_dir.mkdir(parents=True, exist_ok=True)
+        self.local_output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize GCS client
+        if self.use_gcs:
+            try:
+                self.storage_client = storage.Client()
+                self.bucket = self.storage_client.bucket(bucket_name)
+                logger.info(f"✓ Connected to GCS bucket: gs://{bucket_name}/")
+            except Exception as e:
+                logger.warning(f"⚠️  GCS connection failed: {e}")
+                logger.warning("  Will use local files only")
+                self.use_gcs = False
+    
+    # ========== GCS FUNCTIONS ==========
+    
+    def download_from_gcs(self, filename, subfolder='data/processed'):
+        """Download a file from GCS to local storage."""
+        if not self.use_gcs:
+            logger.info(f"  Using local file: {self.local_input_dir / filename}")
+            return self.local_input_dir / filename
+        
+        try:
+            blob_path = f"{subfolder}/{filename}"
+            blob = self.bucket.blob(blob_path)
+            
+            local_path = self.local_input_dir / filename
+            blob.download_to_filename(str(local_path))
+            
+            size_mb = local_path.stat().st_size / (1024 * 1024)
+            logger.info(f"  ✓ Downloaded: {filename} ({size_mb:.2f} MB)")
+            return local_path
+            
+        except Exception as e:
+            logger.error(f"  ✗ Failed to download {filename}: {e}")
+            # Try local fallback
+            local_path = self.local_input_dir / filename
+            if local_path.exists():
+                logger.info(f"  Using local fallback: {filename}")
+                return local_path
+            raise
+    
+    def upload_to_gcs(self, df, filename, subfolder='data/processed'):
+        """Upload DataFrame to GCS."""
+        if not self.use_gcs:
+            logger.info(f"  GCS upload disabled - file saved locally only")
+            return False
+        
+        try:
+            blob_path = f"{subfolder}/{filename}"
+            blob = self.bucket.blob(blob_path)
+            
+            # Convert DataFrame to CSV
+            csv_buffer = io.StringIO()
+            df.to_csv(csv_buffer, index=False)
+            
+            # Upload
+            blob.upload_from_string(csv_buffer.getvalue(), content_type='text/csv')
+            
+            size_mb = len(csv_buffer.getvalue()) / (1024 * 1024)
+            logger.info(f"  ✓ Uploaded to GCS: gs://{self.bucket_name}/{blob_path} ({size_mb:.2f} MB)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"  ✗ GCS upload failed: {e}")
+            return False
+    
+    def save_data(self, df, filename):
+        """Save data locally and to GCS."""
+        # Save locally
+        local_path = self.local_output_dir / filename
+        df.to_csv(local_path, index=False)
+        
+        size_mb = local_path.stat().st_size / (1024 * 1024)
+        rows = len(df)
+        logger.info(f"  ✓ Saved locally: {filename} ({rows:,} rows, {size_mb:.2f} MB)")
+        
+        # Upload to GCS
+        if self.use_gcs:
+            self.upload_to_gcs(df, filename)
+    
     # ========== 1. LAGGED FEATURES (for LSTM & time-series patterns) ==========
     
     def create_lagged_features(self, df):
@@ -56,7 +146,7 @@ class FeatureEngineer:
             'q_return', 'q_price',
             
             # Macro
-            'GDP_last', 'Unemployment_Rate_last', 'vix_q_mean', 'sp500_q_return'
+            'GDP', 'Unemployment_Rate', 'vix_q_mean', 'sp500_q_return'
         ]
         
         # Create lags for 1, 2, 4 quarters back
@@ -361,8 +451,8 @@ class FeatureEngineer:
             df['vix_stress'] = (df['vix_q_max'] > 30).astype(int)  # High fear
             feature_count += 1
         
-        if 'Unemployment_Rate_last' in df.columns:
-            df['unemployment_stress'] = (df['Unemployment_Rate_last'] > 7).astype(int)
+        if 'Unemployment_Rate' in df.columns:
+            df['unemployment_stress'] = (df['Unemployment_Rate'] > 7).astype(int)
             feature_count += 1
         
         # 2. Yield curve inversion (recession predictor)
@@ -548,20 +638,33 @@ class FeatureEngineer:
     # ========== MAIN PIPELINE ==========
     
     def run_pipeline(self):
-        """Execute complete feature engineering pipeline."""
+        """Execute complete feature engineering pipeline with GCS."""
         logger.info("\n" + "="*80)
-        logger.info("FEATURE ENGINEERING PIPELINE")
+        logger.info("FEATURE ENGINEERING PIPELINE WITH GCS")
+        logger.info("="*80)
+        logger.info(f"GCS Bucket: gs://{self.bucket_name}/")
+        logger.info(f"GCS Enabled: {self.use_gcs}")
         logger.info("="*80)
         
-        # Load cleaned data
-        logger.info(f"\nLoading data from: {self.input_path}")
+        # Step 0: Download from GCS
+        logger.info("\n" + "="*80)
+        logger.info("STEP 0: DOWNLOADING FROM GCS")
+        logger.info("="*80)
+        
         try:
-            df = pd.read_csv(self.input_path)
+            input_file = self.download_from_gcs('quarterly_data_complete.csv')
+        except Exception as e:
+            logger.error(f"✗ Failed to download data: {e}")
+            return None
+        
+        # Load cleaned data
+        logger.info(f"\nLoading data from: {input_file}")
+        try:
+            df = pd.read_csv(input_file)
             df['Date'] = pd.to_datetime(df['Date'])
             logger.info(f"✓ Loaded: {df.shape}")
-        except FileNotFoundError:
-            logger.error(f"✗ File not found: {self.input_path}")
-            logger.error("Run data cleaning pipeline first!")
+        except Exception as e:
+            logger.error(f"✗ Error loading data: {e}")
             return None
         
         original_cols = df.shape[1]
@@ -611,15 +714,22 @@ class FeatureEngineer:
             if pct > 20:
                 logger.info(f"   {col}: {pct:.1f}%")
         
-        # Save
-        logger.info(f"\n💾 Saving engineered features to: {self.output_path}")
-        df.to_csv(self.output_path, index=False)
-        logger.info(f"✓ Saved: {df.shape}")
+        # Save locally and upload to GCS
+        logger.info("\n" + "="*80)
+        logger.info("SAVING OUTPUT")
+        logger.info("="*80)
+        
+        self.save_data(df, 'features_engineered.csv')
         
         # Final summary
         logger.info("\n" + "="*80)
         logger.info("READY FOR MODELING ✅")
         logger.info("="*80)
+        
+        logger.info(f"\n📁 Output Locations:")
+        logger.info(f"   Local: {self.local_output_dir / 'features_engineered.csv'}")
+        if self.use_gcs:
+            logger.info(f"   GCS: gs://{self.bucket_name}/data/processed/features_engineered.csv")
         
         logger.info(f"\n🎯 Model-Specific Features:")
         logger.info(f"\n   M2: XGBoost + LSTM (Predictive)")
@@ -646,8 +756,10 @@ class FeatureEngineer:
 
 if __name__ == "__main__":
     engineer = FeatureEngineer(
-        input_path='data/processed/quarterly_data_complete.csv',
-        output_path='data/processed/features_engineered.csv'
+        bucket_name='mlops-financial-stress-data',
+        local_input_dir='data/processed',
+        local_output_dir='data/processed',
+        use_gcs=True  # Set to False to disable GCS and use local files only
     )
     
     features_df = engineer.run_pipeline()
@@ -656,7 +768,8 @@ if __name__ == "__main__":
         print("\n" + "="*80)
         print("SUCCESS! Features engineered and ready for modeling.")
         print("="*80)
-        print(f"\nOutput: data/processed/features_engineered.csv")
+        print(f"\nLocal Output: data/processed/features_engineered.csv")
+        print(f"GCS Output: gs://mlops-financial-stress-data/data/processed/features_engineered.csv")
         print(f"\nNext steps:")
         print(f"1. Train M2 (XGBoost + LSTM) on features + targets")
         print(f"2. Train M3 (Isolation Forest) on crisis indicators")

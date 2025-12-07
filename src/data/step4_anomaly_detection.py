@@ -1,11 +1,12 @@
 """
-STEP 6: ANOMALY DETECTION (FLAG ONLY - NO DATA MODIFICATION)
+STEP 4: ANOMALY DETECTION (FLAG ONLY - NO DATA MODIFICATION) - WITH GCS
 
 MODIFIED FOR QUARTERLY DATA:
 - More lenient outlier detection (5 IQR vs 3 IQR)
 - Higher jump threshold for quarterly volatility (100% vs 50%)
 - Accept higher percentages of anomalies
 - Proper JSON serialization
+- GCS integration for input/output
 
 Detects anomalies and adds flag columns for model awareness.
 
@@ -26,6 +27,8 @@ from typing import Dict, List, Tuple
 from datetime import datetime
 import json
 import warnings
+from google.cloud import storage
+import io
 
 warnings.filterwarnings('ignore')
 
@@ -57,18 +60,21 @@ class NumpyEncoder(json.JSONEncoder):
 
 
 # ============================================================================
-# ANOMALY DETECTOR
+# ANOMALY DETECTOR WITH GCS
 # ============================================================================
 
 class AnomalyDetectorQuarterly:
     """
-    Anomaly detector for quarterly data.
+    Anomaly detector for quarterly data with GCS integration.
     
-    MODIFIED: More lenient thresholds for quarterly volatility.
+    MODIFIED: More lenient thresholds for quarterly volatility + GCS support.
     """
     
-    def __init__(self, dataset_name: str):
+    def __init__(self, dataset_name: str, bucket_name: str = 'mlops-financial-stress-data', use_gcs: bool = True):
         self.dataset_name = dataset_name
+        self.bucket_name = bucket_name
+        self.use_gcs = use_gcs
+        
         self.anomaly_report = {
             'dataset': dataset_name,
             'timestamp': datetime.now().isoformat(),
@@ -77,6 +83,55 @@ class AnomalyDetectorQuarterly:
             'total_count': 0,
             'flags_created': []
         }
+        
+        # Initialize GCS client
+        if self.use_gcs:
+            try:
+                self.storage_client = storage.Client()
+                self.bucket = self.storage_client.bucket(bucket_name)
+                logger.info(f"✓ Connected to GCS bucket: gs://{bucket_name}/")
+            except Exception as e:
+                logger.warning(f"⚠️  GCS connection failed: {e}")
+                logger.warning("  Will use local files only")
+                self.use_gcs = False
+    
+    def upload_to_gcs(self, content: str, filename: str, subfolder: str = 'data/anomaly_reports'):
+        """Upload text content to GCS."""
+        if not self.use_gcs:
+            return False
+        
+        try:
+            blob_path = f"{subfolder}/{filename}"
+            blob = self.bucket.blob(blob_path)
+            blob.upload_from_string(content, content_type='application/json')
+            
+            logger.info(f"  ✓ Uploaded to GCS: gs://{self.bucket_name}/{blob_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"  ✗ GCS upload failed: {e}")
+            return False
+    
+    def upload_csv_to_gcs(self, df: pd.DataFrame, filename: str, subfolder: str = 'data/processed'):
+        """Upload DataFrame to GCS as CSV."""
+        if not self.use_gcs:
+            return False
+        
+        try:
+            blob_path = f"{subfolder}/{filename}"
+            blob = self.bucket.blob(blob_path)
+            
+            csv_buffer = io.StringIO()
+            df.to_csv(csv_buffer, index=False)
+            blob.upload_from_string(csv_buffer.getvalue(), content_type='text/csv')
+            
+            size_mb = len(csv_buffer.getvalue()) / (1024 * 1024)
+            logger.info(f"  ✓ Uploaded to GCS: gs://{self.bucket_name}/{blob_path} ({size_mb:.2f} MB)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"  ✗ GCS upload failed: {e}")
+            return False
     
     # ========== METHOD 1: STATISTICAL OUTLIERS (IQR) ==========
     
@@ -391,12 +446,13 @@ ACTION REQUIRED:
         """Run all anomaly detection methods."""
         
         logger.info("\n" + "="*80)
-        logger.info("ANOMALY DETECTION (QUARTERLY-AWARE)")
+        logger.info("ANOMALY DETECTION (QUARTERLY-AWARE) WITH GCS")
         logger.info("="*80)
         logger.info(f"Dataset: {self.dataset_name}")
         logger.info(f"Shape: {df.shape}")
         logger.info(f"Mode: FLAG ONLY - No data modification")
         logger.info(f"Thresholds: 5 IQR, 100% jump (lenient for quarterly)")
+        logger.info(f"GCS Enabled: {self.use_gcs}")
         logger.info("="*80)
         
         # Run all detections
@@ -440,38 +496,51 @@ ACTION REQUIRED:
         # Send alert
         self.send_alert()
         
-        # Save report
+        # Save report (local + GCS)
         self._save_report()
         
         return df_result, self.anomaly_report
     
     def _save_report(self):
-        """Save anomaly report with proper JSON serialization."""
+        """Save anomaly report with proper JSON serialization (local + GCS)."""
         output_dir = Path("data/anomaly_reports")
         output_dir.mkdir(parents=True, exist_ok=True)
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Save JSON report with custom encoder
-        json_path = output_dir / f"anomaly_report_{self.dataset_name}_{timestamp}.json"
+        # Save JSON report locally
+        json_filename = f"anomaly_report_{self.dataset_name}_{timestamp}.json"
+        json_path = output_dir / json_filename
         
         try:
             with open(json_path, 'w') as f:
                 json.dump(self.anomaly_report, f, indent=2, cls=NumpyEncoder)
             
-            logger.info(f"\n💾 Anomaly report saved: {json_path}")
+            logger.info(f"\n💾 Anomaly report saved locally: {json_path}")
+            
+            # Upload JSON to GCS
+            if self.use_gcs:
+                json_content = json.dumps(self.anomaly_report, indent=2, cls=NumpyEncoder)
+                self.upload_to_gcs(json_content, json_filename)
+                
         except Exception as e:
             logger.error(f"   ❌ Failed to save JSON report: {e}")
         
-        # Save CSV summary
+        # Save CSV summary locally
         if self.anomaly_report.get('statistical_outliers'):
-            csv_path = output_dir / f"outlier_summary_{self.dataset_name}_{timestamp}.csv"
+            csv_filename = f"outlier_summary_{self.dataset_name}_{timestamp}.csv"
+            csv_path = output_dir / csv_filename
             
             try:
                 outlier_df = pd.DataFrame(self.anomaly_report['statistical_outliers'])
                 outlier_df.to_csv(csv_path, index=False)
                 
-                logger.info(f"💾 Outlier summary saved: {csv_path}")
+                logger.info(f"💾 Outlier summary saved locally: {csv_path}")
+                
+                # Upload CSV to GCS
+                if self.use_gcs:
+                    self.upload_csv_to_gcs(outlier_df, csv_filename, subfolder='data/anomaly_reports')
+                    
             except Exception as e:
                 logger.error(f"   ❌ Failed to save CSV summary: {e}")
 
@@ -481,25 +550,46 @@ ACTION REQUIRED:
 # ============================================================================
 
 def main():
-    """Run anomaly detection on cleaned merged data."""
+    """Run anomaly detection with GCS integration."""
     
-    features_dir = Path("data/processed/")
+    # GCS configuration
+    bucket_name = 'mlops-financial-stress-data'
+    use_gcs = True
     
-    # Find the latest cleaned file
-    candidates = [
-        "features_engineered.csv",
-    ]
+    # Initialize GCS client and download data
+    if use_gcs:
+        try:
+            logger.info(f"Connecting to GCS bucket: gs://{bucket_name}/")
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(bucket_name)
+            
+            # Download features_engineered.csv from GCS
+            blob_path = "data/processed/features_engineered.csv"
+            blob = bucket.blob(blob_path)
+            
+            local_dir = Path("data/processed")
+            local_dir.mkdir(parents=True, exist_ok=True)
+            local_path = local_dir / "features_engineered.csv"
+            
+            logger.info(f"Downloading: gs://{bucket_name}/{blob_path}")
+            blob.download_to_filename(str(local_path))
+            
+            size_mb = local_path.stat().st_size / (1024 * 1024)
+            logger.info(f"✓ Downloaded: {local_path} ({size_mb:.2f} MB)")
+            
+            filepath = local_path
+            
+        except Exception as e:
+            logger.warning(f"⚠️  GCS download failed: {e}")
+            logger.info("Falling back to local file...")
+            use_gcs = False
+            filepath = Path("data/processed/features_engineered.csv")
+    else:
+        filepath = Path("data/processed/features_engineered.csv")
     
-    filepath = None
-    for candidate in candidates:
-        if (features_dir / candidate).exists():
-            filepath = features_dir / candidate
-            logger.info(f"Found: {candidate}")
-            break
-    
-    if not filepath:
-        logger.error("❌ No merged features found!")
-        logger.error("Run Step 4 first: python step4_post_merge_cleaning.py")
+    if not filepath.exists():
+        logger.error("❌ No features_engineered.csv found!")
+        logger.error("Run feature engineering pipeline first")
         return
     
     logger.info(f"Loading: {filepath}")
@@ -512,17 +602,27 @@ def main():
         logger.info(f"   Date column: {df['Date'].dtype}")
     
     # Run detection
-    detector = AnomalyDetectorQuarterly(dataset_name=filepath.stem)
+    detector = AnomalyDetectorQuarterly(
+        dataset_name=filepath.stem,
+        bucket_name=bucket_name,
+        use_gcs=use_gcs
+    )
     
     group_col = 'Company' if 'Company' in df.columns else None
     
     df_flagged, report = detector.run_detection(df, group_col=group_col)
     
-    # Save output with flags
-    output_path = features_dir / f"{filepath.stem}_with_anomaly_flags.csv"
+    # Save output with flags (local + GCS)
+    output_filename = f"{filepath.stem}_with_anomaly_flags.csv"
+    output_path = Path("data/processed") / output_filename
     df_flagged.to_csv(output_path, index=False)
     
-    logger.info(f"\n✓ Saved flagged data: {output_path}")
+    logger.info(f"\n✓ Saved flagged data locally: {output_path}")
+    
+    # Upload to GCS
+    if use_gcs:
+        detector.upload_csv_to_gcs(df_flagged, output_filename, subfolder='data/processed')
+    
     logger.info(f"  Original shape: {df.shape}")
     logger.info(f"  Final shape: {df_flagged.shape}")
     logger.info(f"  Flags added: {df_flagged.shape[1] - df.shape[1]}")
@@ -536,6 +636,13 @@ def main():
         logger.warning("   Review anomaly report before proceeding")
     else:
         logger.info("\n✅ No critical anomalies detected")
+    
+    logger.info(f"\n📁 Output Locations:")
+    logger.info(f"   Local data: {output_path}")
+    logger.info(f"   Local reports: data/anomaly_reports/")
+    if use_gcs:
+        logger.info(f"   GCS data: gs://{bucket_name}/data/processed/{output_filename}")
+        logger.info(f"   GCS reports: gs://{bucket_name}/data/anomaly_reports/")
     
     logger.info("\n➡️  Next Steps:")
     logger.info(f"   1. Review: data/anomaly_reports/")

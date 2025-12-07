@@ -1,5 +1,5 @@
 """
-STEP 7: DRIFT DETECTION (Historical Data Drift)
+STEP 5: DRIFT DETECTION (Historical Data Drift)
 
 MODIFIED FOR QUARTERLY DATA (1990-2025):
 - Wider reference period: 1990-2005 (was 2005-2010)

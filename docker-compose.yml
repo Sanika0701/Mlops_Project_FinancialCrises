@@ -1,5 +1,3 @@
-
-
 services:
   postgres:
     image: postgres:13
@@ -23,21 +21,21 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ''
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
-      # Gmail App Password for alerts
       GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
+      # Changed: Use service account key instead of ADC
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcs-key.json
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
       - ./src:/opt/airflow/src
       - .:/opt/airflow/project
+      # Changed: Mount your service account key
+      - /Users/priyanka/Downloads/ninth-iris-422916-f2-9aec4e0969c6.json:/opt/airflow/gcs-key.json:ro
     ports:
       - "8080:8080"
-    #### added for faster execution #####
     cpus: 2
     mem_limit: 3g
-
-    ########
     command: >
       bash -c "airflow db migrate &&
                airflow users create --username admin --password admin123 --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
@@ -58,14 +56,17 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CORE__FERNET_KEY: ''
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-      # Gmail App Password for alerts
       GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
+      # Changed: Use service account key instead of ADC
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcs-key.json
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./data:/opt/airflow/data
       - ./src:/opt/airflow/src
       - .:/opt/airflow/project
+      # Changed: Mount your service account key
+      - /Users/priyanka/Downloads/ninth-iris-422916-f2-9aec4e0969c6.json:/opt/airflow/gcs-key.json:ro
     command: scheduler
     healthcheck:
       test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob']
