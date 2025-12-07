@@ -64,3 +64,11 @@ mlruns/
 *.pth
 *.html
 *.h5
+# Airflow variables
+configs/airflow_variables.json
+
+# Outputs
+outputs/
+
+# Virtual environments
+venv_snorkel/

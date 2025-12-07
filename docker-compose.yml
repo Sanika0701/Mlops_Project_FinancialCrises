@@ -1,80 +1,57 @@
-
+version: '3.8'
 
 services:
-  postgres:
-    image: postgres:13
-    environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
+  
+  # ===========================================================================
+  # MODEL TRAINING SERVICE
+  # ===========================================================================
+  model-training:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.train
+    container_name: financial-stress-training
     volumes:
-      - postgres-db-volume:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
-      interval: 10s
-      retries: 5
-    restart: always
-
-  airflow-webserver:
-    build: .
+      - ./data:/app/data:ro                    # Read-only data
+      - ./outputs:/app/outputs                 # Training outputs
+      - ./models:/app/models                   # Model artifacts
+      - ./mlruns:/app/mlruns                   # MLflow tracking
+      - ./logs:/app/logs                       # Logs
+      - ./configs:/app/configs:ro              # Read-only configs
     environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      AIRFLOW__CORE__FERNET_KEY: ''
-      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
-      # Gmail App Password for alerts
-      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
-    volumes:
-      - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
-      - ./data:/opt/airflow/data
-      - ./src:/opt/airflow/src
-      - .:/opt/airflow/project
+      - PYTHONUNBUFFERED=1
+      - MLFLOW_TRACKING_URI=mlruns
+      - PYTHONPATH=/app
+    networks:
+      - mlops-network
+    # Run training and exit
+    command: python src/models/train_anomaly_detection.py
+  
+  # ===========================================================================
+  # MLFLOW TRACKING SERVER
+  # ===========================================================================
+  mlflow-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.train
+    container_name: financial-stress-mlflow
     ports:
-      - "8080:8080"
-    #### added for faster execution #####
-    cpus: 2
-    mem_limit: 3g
-
-    ########
-    command: >
-      bash -c "airflow db migrate &&
-               airflow users create --username admin --password admin123 --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
-               airflow webserver"
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    restart: always
-    depends_on:
-      - postgres
-
-  airflow-scheduler:
-    build: .
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      AIRFLOW__CORE__FERNET_KEY: ''
-      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-      # Gmail App Password for alerts
-      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
+      - "5000:5000"
     volumes:
-      - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
-      - ./data:/opt/airflow/data
-      - ./src:/opt/airflow/src
-      - .:/opt/airflow/project
-    command: scheduler
+      - ./mlruns:/app/mlruns
+      - ./models:/app/models
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:///mlruns/mlflow.db
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/app/mlruns
+    networks:
+      - mlops-network
+    command: mlflow ui --host 0.0.0.0 --port 5000
     healthcheck:
-      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob']
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
-    restart: always
-    depends_on:
-      - postgres
+      retries: 3
+      start_period: 5s
 
-volumes:
-  postgres-db-volume:
+networks:
+  mlops-network:
+    driver: bridge
