@@ -45,7 +45,6 @@ jobs:
           fi
         continue-on-error: true
 
-  # NEW JOB: Download and prepare data from GCP
   prepare-data:
     runs-on: ubuntu-latest
     needs: [run-tests]
@@ -57,7 +56,6 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       
-      # Authenticate with GCP
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -77,16 +75,12 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
       
-      # Download data from GCP
       - name: Download data from GCS
         run: |
           echo "📥 Downloading data from GCS..."
           mkdir -p data/processed data/features data/splits
           
-          # Download the features_engineered.csv
           gsutil cp gs://${{ env.GCP_BUCKET }}/data/processed/features_engineered.csv data/processed/ || echo "File not found"
-          
-          # Try to download pre-existing splits (if they exist)
           gsutil -m cp gs://${{ env.GCP_BUCKET }}/data/splits/*.csv data/splits/ || echo "Splits not found, will generate"
           
           echo "✅ Download complete"
@@ -111,21 +105,13 @@ jobs:
           if [ ! -f "data/splits/train_data.csv" ]; then
             echo "📊 Generating data splits..."
             
-            # Step 1: Create targets
             python src/models/create_target.py
-
-            # Step 2: Drop unused columns
             python src/preprocessing/drop_features.py
-
-            # Step 3: Create temporal splits
             python src/preprocessing/temporal_split.py
-            
-            # Step 4: Handle outliers
             python src/preprocessing/handle_outliers_after_split.py
             
             echo "✅ Splits generated"
             
-            # Upload splits back to GCS
             echo "📤 Uploading splits to GCS..."
             gsutil -m cp data/splits/*.csv gs://${{ env.GCP_BUCKET }}/data/splits/
             gsutil cp data/features/quarterly_data_with_targets.csv gs://${{ env.GCP_BUCKET }}/data/features/
@@ -145,8 +131,7 @@ jobs:
           retention-days: 7
         continue-on-error: true
 
-  # MODIFIED JOB: Train model using downloaded data
-  train-model:
+  train-xgboost:
     runs-on: ubuntu-latest
     needs: [run-tests, prepare-data]
     
@@ -168,7 +153,6 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
       
-      # Download the artifact from previous job
       - name: Download data splits
         uses: actions/download-artifact@v4
         with:
@@ -187,76 +171,363 @@ jobs:
             echo "⚠️  Data splits not found"
           fi
       
-      - name: Train XGBoost (revenue only)
+      - name: Train XGBoost (all 5 targets)
         if: steps.check_data.outputs.data_exists == 'true'
         run: |
+          echo "🚀 Training XGBoost for all 5 targets..."
           python src/models/xgboost_model.py \
-            --target revenue \
+            --target all \
             --splits-dir data/splits \
             --output-dir models/xgboost \
             --no-mlflow
         continue-on-error: true
       
-      - name: Check training results
+      - name: Hyperparameter tuning for XGBoost
         if: steps.check_data.outputs.data_exists == 'true'
         run: |
-          if [ -f "models/xgboost/xgboost_revenue_metrics.json" ]; then
-            echo "✅ Model trained successfully!"
-            echo ""
-            echo "Model Metrics:"
-            cat models/xgboost/xgboost_revenue_metrics.json
-          else
-            echo "⚠️  Model training may have failed"
-          fi
+          echo "🔧 Running XGBoost hyperparameter tuning..."
+          python src/models/xgboost_hyperparameter_tuning.py \
+            --splits-dir data/splits \
+            --output-dir models/xgboost_tuned \
+            --no-mlflow
         continue-on-error: true
       
-      # Upload trained model back to GCS
-      - name: Upload model to GCS
+      - name: Check XGBoost training results
+        if: steps.check_data.outputs.data_exists == 'true'
+        run: |
+          echo "📊 XGBoost Training Results:"
+          for target in revenue eps debt_equity profit_margin stock_return; do
+            if [ -f "models/xgboost/xgboost_${target}_metrics.json" ]; then
+              echo ""
+              echo "✅ $target model trained successfully"
+              cat models/xgboost/xgboost_${target}_metrics.json | grep -E '"test":|"r2":|"rmse":'
+            else
+              echo "⚠️  $target model not found"
+            fi
+          done
+        continue-on-error: true
+      
+      - name: Upload XGBoost models to GCS
         if: steps.check_data.outputs.data_exists == 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
       
-      - name: Upload model files to GCS
+      - name: Upload XGBoost files to GCS
         if: steps.check_data.outputs.data_exists == 'true'
         run: |
           gcloud config set project ninth-iris-422916-f2
-          gsutil -m cp models/xgboost/* gs://${{ env.GCP_BUCKET }}/models/xgboost/
-          echo "✅ Model uploaded to GCS"
+          echo "📤 Uploading XGBoost models to GCS..."
+          gsutil -m cp models/xgboost/* gs://${{ env.GCP_BUCKET }}/models/xgboost/ || echo "No models to upload"
+          gsutil -m cp models/xgboost_tuned/* gs://${{ env.GCP_BUCKET }}/models/xgboost_tuned/ || echo "No tuned models to upload"
+          echo "✅ XGBoost models uploaded to GCS"
         continue-on-error: true
       
-      - name: Upload trained model as artifact
+      - name: Upload XGBoost artifacts
         if: steps.check_data.outputs.data_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: xgboost-revenue-model
+          name: xgboost-models
           path: |
-            models/xgboost/xgboost_revenue.pkl
-            models/xgboost/xgboost_revenue_metrics.json
-            models/xgboost/xgboost_revenue_importance.csv
+            models/xgboost/**/*.pkl
+            models/xgboost/**/*.json
+            models/xgboost/**/*.csv
+            models/xgboost_tuned/**/*.pkl
+            models/xgboost_tuned/**/*.json
+            models/xgboost_tuned/**/*.csv
           retention-days: 30
+        continue-on-error: true
+
+  train-lightgbm:
+    runs-on: ubuntu-latest
+    needs: [run-tests, prepare-data]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download data splits
+        uses: actions/download-artifact@v4
+        with:
+          name: data-splits
+          path: data/splits
+      
+      - name: Train LightGBM (all 5 targets)
+        run: |
+          echo "🚀 Training LightGBM for all 5 targets..."
+          python src/models/lightgbm_model.py \
+            --target all \
+            --splits-dir data/splits \
+            --output-dir models/lightgbm \
+            --no-mlflow
+        continue-on-error: true
+      
+      - name: Hyperparameter tuning for LightGBM
+        run: |
+          echo "🔧 Running LightGBM hyperparameter tuning..."
+          python src/models/lightgbm_hyperparameter_tuning.py \
+            --splits-dir data/splits \
+            --output-dir models/lightgbm_tuned \
+            --no-mlflow
+        continue-on-error: true
+      
+      - name: Upload LightGBM models to GCS
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Upload LightGBM files to GCS
+        run: |
+          gcloud config set project ninth-iris-422916-f2
+          echo "📤 Uploading LightGBM models to GCS..."
+          gsutil -m cp models/lightgbm/* gs://${{ env.GCP_BUCKET }}/models/lightgbm/ || echo "No models to upload"
+          gsutil -m cp models/lightgbm_tuned/* gs://${{ env.GCP_BUCKET }}/models/lightgbm_tuned/ || echo "No tuned models to upload"
+          echo "✅ LightGBM models uploaded to GCS"
+        continue-on-error: true
+      
+      - name: Upload LightGBM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lightgbm-models
+          path: |
+            models/lightgbm/**/*.pkl
+            models/lightgbm/**/*.json
+            models/lightgbm/**/*.csv
+            models/lightgbm_tuned/**/*.pkl
+            models/lightgbm_tuned/**/*.json
+            models/lightgbm_tuned/**/*.csv
+          retention-days: 30
+        continue-on-error: true
+
+  train-lstm:
+    runs-on: ubuntu-latest
+    needs: [run-tests, prepare-data]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download data splits
+        uses: actions/download-artifact@v4
+        with:
+          name: data-splits
+          path: data/splits
+      
+      - name: Train LSTM (all 5 targets)
+        run: |
+          echo "🚀 Training LSTM for all 5 targets..."
+          python src/models/lstm_model.py \
+            --target all \
+            --splits-dir data/splits \
+            --output-dir models/lstm \
+            --no-mlflow
+        continue-on-error: true
+      
+      - name: Hyperparameter tuning for LSTM
+        run: |
+          echo "🔧 Running LSTM hyperparameter tuning..."
+          python src/models/lstm_hyperparameter_tuning.py \
+            --splits-dir data/splits \
+            --output-dir models/lstm_tuned \
+            --no-mlflow
+        continue-on-error: true
+      
+      - name: Upload LSTM models to GCS
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Upload LSTM files to GCS
+        run: |
+          gcloud config set project ninth-iris-422916-f2
+          echo "📤 Uploading LSTM models to GCS..."
+          gsutil -m cp models/lstm/* gs://${{ env.GCP_BUCKET }}/models/lstm/ || echo "No models to upload"
+          gsutil -m cp models/lstm_tuned/* gs://${{ env.GCP_BUCKET }}/models/lstm_tuned/ || echo "No tuned models to upload"
+          echo "✅ LSTM models uploaded to GCS"
+        continue-on-error: true
+      
+      - name: Upload LSTM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lstm-models
+          path: |
+            models/lstm/**/*.h5
+            models/lstm/**/*.keras
+            models/lstm/**/*.json
+            models/lstm/**/*.csv
+            models/lstm_tuned/**/*.h5
+            models/lstm_tuned/**/*.keras
+            models/lstm_tuned/**/*.json
+            models/lstm_tuned/**/*.csv
+          retention-days: 30
+        continue-on-error: true
+
+  model-selection:
+    runs-on: ubuntu-latest
+    needs: [train-xgboost, train-lightgbm, train-lstm]
+    if: always()
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download all model artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: models_artifacts
+      
+      - name: Restore model structure
+        run: |
+          echo "📦 Restoring model structure..."
+          mkdir -p models/xgboost models/lightgbm models/lstm
+          
+          # Copy XGBoost models
+          if [ -d "models_artifacts/xgboost-models" ]; then
+            cp -r models_artifacts/xgboost-models/* models/ 2>/dev/null || echo "No XGBoost models"
+          fi
+          
+          # Copy LightGBM models
+          if [ -d "models_artifacts/lightgbm-models" ]; then
+            cp -r models_artifacts/lightgbm-models/* models/ 2>/dev/null || echo "No LightGBM models"
+          fi
+          
+          # Copy LSTM models
+          if [ -d "models_artifacts/lstm-models" ]; then
+            cp -r models_artifacts/lstm-models/* models/ 2>/dev/null || echo "No LSTM models"
+          fi
+          
+          echo "✅ Model structure restored"
+          ls -R models/
+      
+      - name: Run final model selection and bias detection
+        run: |
+          echo "🔍 Running final model selection and bias detection..."
+          python src/models/final_selection_after_bias_detection.py \
+            --models-dir models \
+            --output-dir models/final_selection
+        continue-on-error: true
+      
+      - name: Display final selection results
+        run: |
+          if [ -f "models/final_selection/final_model_selection.json" ]; then
+            echo "📊 Final Model Selection Results:"
+            cat models/final_selection/final_model_selection.json
+          else
+            echo "⚠️  Final selection file not found"
+          fi
+        continue-on-error: true
+      
+      - name: Upload final selection to GCS
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Upload final selection files to GCS
+        run: |
+          gcloud config set project ninth-iris-422916-f2
+          echo "📤 Uploading final selection to GCS..."
+          gsutil -m cp models/final_selection/* gs://${{ env.GCP_BUCKET }}/models/final_selection/ || echo "No selection files to upload"
+          echo "✅ Final selection uploaded to GCS"
+        continue-on-error: true
+      
+      - name: Upload final selection artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-model-selection
+          path: |
+            models/final_selection/*.json
+            models/final_selection/*.csv
+            models/final_selection/*.pkl
+          retention-days: 90
         continue-on-error: true
 
   pipeline-summary:
     runs-on: ubuntu-latest
-    needs: [run-tests, prepare-data, train-model]
+    needs: [run-tests, prepare-data, train-xgboost, train-lightgbm, train-lstm, model-selection]
     if: always()
     
     steps:
-      - name: Display summary
+      - name: Display comprehensive summary
         run: |
-          echo "=================================="
-          echo "SIMPLE CI/CD PIPELINE SUMMARY"
-          echo "=================================="
+          echo "================================================================"
+          echo "         COMPREHENSIVE ML PIPELINE SUMMARY"
+          echo "================================================================"
           echo ""
-          echo "Tests: ${{ needs.run-tests.result }}"
-          echo "Data Preparation: ${{ needs.prepare-data.result }}"
-          echo "Model Training: ${{ needs.train-model.result }}"
+          echo "Pipeline Status:"
+          echo "  Tests:              ${{ needs.run-tests.result }}"
+          echo "  Data Preparation:   ${{ needs.prepare-data.result }}"
+          echo "  XGBoost Training:   ${{ needs.train-xgboost.result }}"
+          echo "  LightGBM Training:  ${{ needs.train-lightgbm.result }}"
+          echo "  LSTM Training:      ${{ needs.train-lstm.result }}"
+          echo "  Model Selection:    ${{ needs.model-selection.result }}"
           echo ""
-          if [ "${{ needs.train-model.result }}" == "success" ]; then
-            echo "✅ Pipeline completed successfully!"
+          echo "Target Variables Trained:"
+          echo "  1. revenue"
+          echo "  2. eps"
+          echo "  3. debt_equity"
+          echo "  4. profit_margin"
+          echo "  5. stock_return"
+          echo ""
+          echo "Models Trained:"
+          echo "  - XGBoost (base + hyperparameter tuned)"
+          echo "  - LightGBM (base + hyperparameter tuned)"
+          echo "  - LSTM (base + hyperparameter tuned)"
+          echo ""
+          echo "Post-Processing:"
+          echo "  - Final model selection after bias detection"
+          echo ""
+          if [ "${{ needs.model-selection.result }}" == "success" ]; then
+            echo "✅ PIPELINE COMPLETED SUCCESSFULLY!"
             echo ""
-            echo "Model and data stored in GCS bucket: mlops-financial-stress-data"
+            echo "All models and results stored in GCS bucket: mlops-financial-stress-data"
+            echo ""
+            echo "GCS Structure:"
+            echo "  - gs://mlops-financial-stress-data/data/splits/"
+            echo "  - gs://mlops-financial-stress-data/models/xgboost/"
+            echo "  - gs://mlops-financial-stress-data/models/xgboost_tuned/"
+            echo "  - gs://mlops-financial-stress-data/models/lightgbm/"
+            echo "  - gs://mlops-financial-stress-data/models/lightgbm_tuned/"
+            echo "  - gs://mlops-financial-stress-data/models/lstm/"
+            echo "  - gs://mlops-financial-stress-data/models/lstm_tuned/"
+            echo "  - gs://mlops-financial-stress-data/models/final_selection/"
           else
-            echo "⚠️  Check logs for details"
+            echo "⚠️  Some pipeline stages had issues - check logs for details"
           fi
+          echo ""
+          echo "================================================================"
