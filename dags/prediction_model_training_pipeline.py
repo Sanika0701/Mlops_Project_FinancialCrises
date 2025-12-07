@@ -142,20 +142,20 @@ with DAG(
         bash_command=f"""
         cd {PROJECT_DIR} && \
         echo "📊 Creating target variables..." && \
-        python src/models/create_target.py
+        python src/models/predictor/create_target.py
         """,
         execution_timeout=timedelta(minutes=10),
     )
     
-    drop_features = BashOperator(
-        task_id='drop_unnecessary_features',
-        bash_command=f"""
-        cd {PROJECT_DIR} && \
-        echo "✂️ Dropping unnecessary features..." && \
-        python src/preprocessing/drop_features.py
-        """,
-        execution_timeout=timedelta(minutes=5),
-    )
+    # drop_features = BashOperator(
+    #     task_id='drop_unnecessary_features',
+    #     bash_command=f"""
+    #     cd {PROJECT_DIR} && \
+    #     echo "✂️ Dropping unnecessary features..." && \
+    #     python src/preprocessing/drop_features.py
+    #     """,
+    #     execution_timeout=timedelta(minutes=5),
+    # )
     
     temporal_split = BashOperator(
         task_id='temporal_train_test_split',
@@ -186,7 +186,7 @@ with DAG(
         bash_command=f"""
         cd {PROJECT_DIR} && \
         echo "🚀 Training XGBoost baseline..." && \
-        python src/models/xgboost_model.py --target all
+        python src/models/predictor/xgboost_model.py --target all
         """,
         execution_timeout=timedelta(minutes=30),
     )
@@ -196,7 +196,7 @@ with DAG(
         bash_command=f"""
         cd {PROJECT_DIR} && \
         echo "🚀 Training LightGBM baseline..." && \
-        python src/models/lightgbm_model.py --target all
+        python src/models/predictor/lightgbm_model.py --target all
         """,
         execution_timeout=timedelta(minutes=30),
     )
@@ -206,7 +206,7 @@ with DAG(
         bash_command=f"""
         cd {PROJECT_DIR} && \
         echo "🚀 Training LSTM baseline..." && \
-        python src/models/lstm_model.py --target all
+        python src/models/predictor/lstm_model.py --target all
         """,
         execution_timeout=timedelta(minutes=30),
     )
@@ -220,7 +220,7 @@ with DAG(
         bash_command=f"""
         cd {PROJECT_DIR} && \
         echo "⚙️ Tuning XGBoost hyperparameters..." && \
-        python src/models/xgboost_hyperparameter_tuning.py --target all
+        python src/models/predictor/xgboost_hyperparameter_tuning.py --target all
         """,
         execution_timeout=timedelta(minutes=60),
         trigger_rule='none_failed',
@@ -231,7 +231,7 @@ with DAG(
         bash_command=f"""
         cd {PROJECT_DIR} && \
         echo "⚙️ Tuning LightGBM hyperparameters..." && \
-        python src/models/lightgbm_hyperparameter_tuning.py --target all
+        python src/models/predictor/lightgbm_hyperparameter_tuning.py --target all
         """,
         execution_timeout=timedelta(minutes=60),
         trigger_rule='none_failed',
@@ -242,7 +242,7 @@ with DAG(
         bash_command=f"""
         cd {PROJECT_DIR} && \
         echo "⚙️ Tuning LSTM hyperparameters..." && \
-        python src/models/lstm_hyperparameter_tuning.py --target all
+        python src/models/predictor/lstm_hyperparameter_tuning.py --target all
         """,
         execution_timeout=timedelta(minutes=60),
         trigger_rule='none_failed',
@@ -354,7 +354,7 @@ with DAG(
     # ==========================================================================
     
     # PHASE 0: Preprocessing (sequential)
-    create_targets >> drop_features >> temporal_split >> handle_outliers
+    create_targets >> temporal_split >> handle_outliers
     
     # PHASE 1: Baseline training (parallel, after preprocessing)
     handle_outliers >> train_xgboost_baseline
