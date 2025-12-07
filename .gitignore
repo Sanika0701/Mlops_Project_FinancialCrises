@@ -62,3 +62,6 @@ mlruns/
 *.png
 *.pkl
 *.pth
+*.html
+*.h5
+*.pkl
