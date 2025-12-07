@@ -1,0 +1,73 @@
+data:
+  source_type: "gcs"
+  
+  local:
+    labeled_data_path: "outputs/snorkel/data/snorkel_labeled_only.csv"
+  
+  gcs:
+    bucket: "mlops-financial-stress-data"
+    labeled_data_path: "outputs/snorkel/data/snorkel_labeled_only.csv"
+  
+  date_column: "Date"
+  company_column: "Company"
+  sector_column: "Sector"
+  target_column: "AT_RISK"
+  
+  feature_columns:
+    macroeconomic: ["GDP_last", "CPI_last", "Unemployment_Rate_last", "Federal_Funds_Rate_mean"]
+    market: ["vix_q_mean", "sp500_q_return", "Financial_Stress_Index_mean"]
+    company: ["Revenue", "Net_Income", "Debt_to_Equity", "Current_Ratio", "net_margin", "roa", "roe"]
+
+split:
+  train_end_year: 2018
+  val_start_year: 2019
+  val_end_year: 2020
+  test_start_year: 2021
+
+models:
+  isolation_forest:
+    enabled: true
+    params:
+      n_estimators: 100
+      contamination: 0.035
+      random_state: 42
+  
+  local_outlier_factor:
+    enabled: true
+    params:
+      n_neighbors: 20
+      contamination: 0.035
+      novelty: true
+  
+  one_class_svm:
+    enabled: true
+    params:
+      kernel: 'rbf'
+      gamma: 'scale'
+      nu: 0.035
+  
+  dbscan:
+    enabled: false
+    params:
+      eps: 0.5
+      min_samples: 5
+
+output:
+  models_dir: "models/anomaly_detection"
+  results_dir: "outputs/models/results"
+  plots_dir: "outputs/models/plots"
+  reports_dir: "outputs/models/reports"
+  upload_to_gcs: true
+
+mlflow:
+  tracking_uri: "file:./mlruns"
+  experiment_name: "financial_stress_anomaly_detection"
+  tags:
+    project: "financial_stress_test"
+    model_type: "anomaly_detection"
+    author: "parth_saraykar"
+
+evaluation:
+  targets:
+    roc_auc_min: 0.85
+    precision_at_k_min: 0.80
