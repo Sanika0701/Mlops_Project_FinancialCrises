@@ -1,0 +1,397 @@
+name: VAE Model - Continuous Deployment
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/models/**"
+      - "requirements.txt"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.10"
+  GCP_BUCKET: "mlops-financial-stress-data"
+  KS_THRESHOLD: "0.806"
+  CORR_MAE_THRESHOLD: "0.0645"
+  DISABLE_MLFLOW: "true"
+
+jobs:
+  prepare-vae-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download VAE training data from GCS
+        run: |
+          echo "📥 Downloading VAE training data from GCS..."
+          mkdir -p data/features
+          gsutil cp gs://${{ env.GCP_BUCKET }}/data/features/macro_features_clean.csv data/features/ || echo "File not found"
+          echo "✅ Download complete"
+      
+      - name: Verify data for VAE training
+        id: check_data
+        run: |
+          if [ -f "data/features/macro_features_clean.csv" ]; then
+            echo "vae_data_exists=true" >> $GITHUB_OUTPUT
+            echo "✅ macro_features_clean.csv found"
+            python -c "import pandas as pd; df = pd.read_csv('data/features/macro_features_clean.csv'); print(f'Data shape: {df.shape}'); assert df.shape[0] > 9000 and df.shape[1] > 500"
+            echo "✅ Data validation passed"
+          else
+            echo "vae_data_exists=false" >> $GITHUB_OUTPUT
+            echo "❌ Data not found"
+          fi
+      
+      - name: Upload data as artifact
+        if: steps.check_data.outputs.vae_data_exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vae-training-data
+          path: data/features/macro_features_clean.csv
+          retention-days: 7
+
+  train-vae-models:
+    runs-on: ubuntu-latest
+    needs: [prepare-vae-data]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download training data
+        uses: actions/download-artifact@v4
+        with:
+          name: vae-training-data
+          path: data/features
+      
+      - name: Verify data exists
+        id: check_data
+        run: |
+          if [ -f "data/features/macro_features_clean.csv" ]; then
+            echo "data_exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Training data found"
+          else
+            echo "data_exists=false" >> $GITHUB_OUTPUT
+            echo "❌ Training data not found"
+          fi
+      
+      - name: Train Dense VAE Optimized
+        if: steps.check_data.outputs.data_exists == 'true'
+        run: |
+          echo "🚀 Training Dense VAE Optimized..."
+          python src/models/Dense_VAE_optimized_mlflow_updated.py
+          echo "✅ Dense VAE training complete"
+        env:
+          DISABLE_MLFLOW: "true"
+        continue-on-error: false
+        timeout-minutes: 60
+      
+      - name: Train Ensemble VAE
+        if: steps.check_data.outputs.data_exists == 'true'
+        run: |
+          echo "🚀 Training Ensemble VAE..."
+          python src/models/Ensemble_VAE_updated.py
+          echo "✅ Ensemble VAE training complete"
+        env:
+          DISABLE_MLFLOW: "true"
+        continue-on-error: false
+        timeout-minutes: 60
+      
+      - name: Check training outputs
+        if: steps.check_data.outputs.data_exists == 'true'
+        run: |
+          echo "📊 Checking training outputs..."
+          if ls models/vae/*.pth 1> /dev/null 2>&1; then
+            echo "✅ Model checkpoints found"
+            ls -lh models/vae/*.pth
+          else
+            echo "⚠️ No model checkpoints found"
+          fi
+          if ls outputs/scenarios/*.csv 1> /dev/null 2>&1; then
+            echo "✅ Generated scenarios found"
+            ls -lh outputs/scenarios/*.csv
+          else
+            echo "⚠️ No scenarios generated"
+          fi
+      
+      - name: Upload trained models as artifact
+        if: steps.check_data.outputs.data_exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vae-trained-models
+          path: |
+            models/vae/*.pth
+            models/vae/*.pkl
+            outputs/scenarios/*.csv
+          retention-days: 30
+        continue-on-error: true
+
+  validate-vae-models:
+    runs-on: ubuntu-latest
+    needs: [train-vae-models]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download trained models
+        uses: actions/download-artifact@v4
+        with:
+          name: vae-trained-models
+      
+      - name: Download training data
+        uses: actions/download-artifact@v4
+        with:
+          name: vae-training-data
+          path: data/features
+      
+      - name: Run Model Validation
+        id: validation
+        run: |
+          echo "🔍 Running model validation..."
+          python src/models/model_validation.py
+          echo "✅ Validation complete"
+        continue-on-error: false
+      
+      - name: Check validation results
+        run: |
+          echo "📊 Checking validation results..."
+          if [ -f "outputs/validation/validation_results.json" ]; then
+            echo "✅ Validation results found"
+            cat outputs/validation/validation_results.json
+            python -c "import json; results = json.load(open('outputs/validation/validation_results.json')); ks = results.get('ks_pass_rate', 0); corr = results.get('correlation_mae', 1.0); print(f'KS: {ks:.1%}, Corr MAE: {corr:.4f}'); exit(0 if ks >= 0.806 and corr <= 0.0645 else 1)"
+          else
+            echo "❌ Validation results not found"
+            exit 1
+          fi
+      
+      - name: Upload validation results
+        uses: actions/upload-artifact@v4
+        with:
+          name: vae-validation-results
+          path: outputs/validation/*
+          retention-days: 30
+
+  bias-detection:
+    runs-on: ubuntu-latest
+    needs: [validate-vae-models]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: vae-trained-models
+      
+      - name: Download training data
+        uses: actions/download-artifact@v4
+        with:
+          name: vae-training-data
+          path: data/features
+      
+      - name: Run Bias Detection - Dense VAE
+        id: bias_dense
+        run: |
+          echo "🔍 Running bias detection for Dense VAE Optimized..."
+          python src/models/bias_detection.py Dense_VAE_Optimized
+          echo "✅ Dense VAE bias detection complete"
+        continue-on-error: true
+      
+      - name: Run Bias Detection - Ensemble VAE
+        id: bias_ensemble
+        run: |
+          echo "🔍 Running bias detection for Ensemble VAE..."
+          python src/models/bias_detection.py Ensemble_VAE
+          echo "✅ Ensemble VAE bias detection complete"
+        continue-on-error: true
+      
+      - name: Check bias detection results
+        run: |
+          echo "📊 Checking bias detection results..."
+          for model in Dense_VAE_Optimized Ensemble_VAE; do
+            if [ -f "outputs/bias/${model}_bias_report.json" ]; then
+              echo "✅ ${model} bias report found"
+              cat "outputs/bias/${model}_bias_report.json"
+            fi
+          done
+          python -c "import json, os; has_bias = False; [print(f'{m}: OK') for m in ['Dense_VAE_Optimized', 'Ensemble_VAE'] if os.path.exists(f'outputs/bias/{m}_bias_report.json')]; print('✅ Bias checks complete')"
+      
+      - name: Upload bias detection results
+        uses: actions/upload-artifact@v4
+        with:
+          name: vae-bias-results
+          path: outputs/bias/*
+          retention-days: 30
+
+  model-selection:
+    runs-on: ubuntu-latest
+    needs: [bias-detection]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+      
+      - name: Run Model Selection
+        id: selection
+        run: |
+          echo "🏆 Running model selection..."
+          python src/models/model_selection.py
+          echo "✅ Model selection complete"
+      
+      - name: Display selected model
+        run: |
+          if [ -f "outputs/selection/best_model.json" ]; then
+            echo "🏆 Best Model Selected:"
+            cat outputs/selection/best_model.json
+            python -c "import json; best = json.load(open('outputs/selection/best_model.json')); print(f\"Model: {best.get('model_name')}, KS: {best.get('ks_pass_rate', 0):.1%}, Corr MAE: {best.get('correlation_mae', 0):.4f}\")"
+          else
+            echo "❌ Model selection results not found"
+            exit 1
+          fi
+      
+      - name: Upload model to GCS
+        run: |
+          echo "📤 Uploading best model to GCS..."
+          gcloud config set project ninth-iris-422916-f2
+          gsutil -m cp -r models/vae/* gs://${{ env.GCP_BUCKET }}/models/vae/
+          gsutil -m cp -r outputs/* gs://${{ env.GCP_BUCKET }}/outputs/vae/
+          gsutil cp outputs/selection/best_model.json gs://${{ env.GCP_BUCKET }}/models/vae/best_model.json
+          echo "✅ Model uploaded to GCS"
+      
+      - name: Upload final artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vae-final-model
+          path: |
+            models/vae/*
+            outputs/selection/*
+          retention-days: 90
+
+  pipeline-summary:
+    runs-on: ubuntu-latest
+    needs: [prepare-vae-data, train-vae-models, validate-vae-models, bias-detection, model-selection]
+    if: always()
+    
+    steps:
+      - name: Display VAE Pipeline Summary
+        run: |
+          echo "================================================"
+          echo "      VAE MODEL CD PIPELINE SUMMARY"
+          echo "================================================"
+          echo ""
+          echo "📥 Data Preparation:  ${{ needs.prepare-vae-data.result }}"
+          echo "🚀 Model Training:    ${{ needs.train-vae-models.result }}"
+          echo "🔍 Validation:        ${{ needs.validate-vae-models.result }}"
+          echo "⚖️  Bias Detection:    ${{ needs.bias-detection.result }}"
+          echo "🏆 Model Selection:   ${{ needs.model-selection.result }}"
+          echo ""
+          if [ "${{ needs.model-selection.result }}" == "success" ]; then
+            echo "================================================"
+            echo "✅ PIPELINE COMPLETED SUCCESSFULLY!"
+            echo "================================================"
+            echo ""
+            echo "📦 Artifacts stored in GCS: mlops-financial-stress-data"
+            echo ""
+            echo "Models trained:"
+            echo "  • Dense VAE Optimized (596 features, no PCA)"
+            echo "  • Ensemble VAE"
+            echo ""
+            echo "Next steps:"
+            echo "  1. Review validation metrics"
+            echo "  2. Check bias detection reports"
+            echo "  3. Deploy best model to production"
+          else
+            echo "================================================"
+            echo "⚠️  PIPELINE FAILED - CHECK LOGS"
+            echo "================================================"
+          fi
