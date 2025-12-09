@@ -58,7 +58,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install tensorflow scipy numpy pandas scikit-learn joblib google-cloud-storage google-cloud-monitoring
+          pip install tensorflow scipy numpy pandas scikit-learn joblib google-cloud-storage google-cloud-monitoring torch
 
       - name: Download ALL production models and reference data
         run: |
