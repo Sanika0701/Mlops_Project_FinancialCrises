@@ -5,12 +5,8 @@ on:
     branches:
       - main
     paths:
-        - "src/models/Dense_VAE_optimized_mlflow_updated.py"
-        - "src/models/Ensemble_VAE_updated.py"
-        - "src/models/model_validation.py"
-        - "src/models/bias_detection.py"
-        - "src/models/model_selection.py"
-        - "requirements.txt"
+      - "src/models/**"
+      - "requirements.txt"
   workflow_dispatch:
 
 env:
@@ -413,6 +409,36 @@ jobs:
       
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        with:
+          path: .  # Download to current directory
+      
+      - name: Organize artifacts for model selection
+        run: |
+          echo "📂 Organizing artifacts..."
+          
+          # Move vae-trained-models contents to outputs/
+          if [ -d "vae-trained-models" ]; then
+            mkdir -p outputs
+            cp -r vae-trained-models/* outputs/
+            echo "✅ Moved vae-trained-models to outputs/"
+          fi
+          
+          # Move validation results
+          if [ -d "vae-validation-results" ]; then
+            cp -r vae-validation-results outputs/validation/
+            echo "✅ Moved validation results"
+          fi
+          
+          # Move bias results
+          if [ -d "vae-bias-results" ]; then
+            cp -r vae-bias-results outputs/bias_detection/
+            echo "✅ Moved bias results"
+          fi
+          
+          # Verify structure
+          echo ""
+          echo "Final structure:"
+          ls -R outputs/ | head -20
       
       - name: Run Model Selection
         id: selection
