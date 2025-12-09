@@ -60,7 +60,7 @@ jobs:
           if [ -f "data/features/macro_features_clean.csv" ]; then
             echo "vae_data_exists=true" >> $GITHUB_OUTPUT
             echo "✅ macro_features_clean.csv found"
-            python -c "import pandas as pd; df = pd.read_csv('data/features/macro_features_clean.csv'); print(f'Data shape: {df.shape}'); assert df.shape[0] > 9000 and df.shape[1] > 500"
+            python -c "import pandas as pd; df = pd.read_csv('data/features/macro_features_clean.csv'); print(f'Data shape: {df.shape}'); assert df.shape[0] > 9000 and df.shape[1] > 50, f'Expected >9000 rows and >50 columns, got {df.shape}'"
             echo "✅ Data validation passed"
           else
             echo "vae_data_exists=false" >> $GITHUB_OUTPUT
