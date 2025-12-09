@@ -54,6 +54,9 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.GCP_PROJECT }}
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        
       
       - name: Install dependencies
         run: |
@@ -901,12 +904,13 @@ jobs:
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
-          server_port: 465
+          server_port: 587
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           subject: "📊 Model Monitoring Complete - $(date +%Y-%m-%d)"
-          to: ${{ env.NOTIFICATION_EMAIL }}
-          from: MLOps Financial Stress <${{ env.NOTIFICATION_EMAIL }}>
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: MLOps Financial Stress <${{ secrets.EMAIL_USERNAME }}>
+          secure: true
           body: |
             📊 MODEL MONITORING & RETRAINING REPORT
             Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
