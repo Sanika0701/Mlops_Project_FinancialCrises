@@ -120,7 +120,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pandas numpy matplotlib seaborn scipy scikit-learn python-dotenv
+          pip install -r requirements.txt
       
       - name: Download training data
         uses: actions/download-artifact@v4
