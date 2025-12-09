@@ -706,7 +706,9 @@ jobs:
           echo "🔍 Running Model Monitoring..."
           
           python src/monitoring/gcp_monitoring_setup.py \
-            --project-id ninth-iris-422916-f2
+            --models-dir models/best_models \
+            --reference-data data/splits/train_data.csv \
+            --logs-dir logs/monitoring
           
           # Capture exit code
           MONITORING_EXIT=$?
@@ -719,10 +721,13 @@ jobs:
         if: always()
         run: |
           echo "📤 Uploading monitoring logs..."
+          mkdir -p logs/monitoring
           
           if [ -d "logs/monitoring" ]; then
             gsutil -m cp logs/monitoring/*.json gs://${{ env.GCP_BUCKET }}/logs/monitoring/
             echo "✅ Logs uploaded"
+          else
+            echo "⚠️  No logs directory found"
           fi
         continue-on-error: true
       
@@ -943,17 +948,12 @@ jobs:
         run: |
           echo "📊 Creating monitoring baseline..."
           
-          python src/monitoring/gcp_monitoring_setup.py \
-            --project-id ninth-iris-422916-f2
+          python src/monitoring/model_monitor.py \
+            --models-dir models/best_models \
+            --reference-data data/splits/train_data.csv \
+            --logs-dir logs/monitoring
           
           echo "✅ Baseline created"
-      
-      - name: Upload baseline to GCS
-        run: |
-          gsutil cp logs/monitoring/monitoring_report_latest.json \
-            gs://${{ env.GCP_BUCKET }}/logs/monitoring/baseline.json
-          
-          echo "✅ Monitoring baseline uploaded"
 
   pipeline-summary:
     runs-on: ubuntu-latest
