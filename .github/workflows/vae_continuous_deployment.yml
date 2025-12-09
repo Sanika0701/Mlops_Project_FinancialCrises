@@ -507,21 +507,21 @@ jobs:
             echo "⚠️ Ensemble VAE ensemble_validation.txt not found"
           fi
           
-          # Check for model pkl files
+          # Check for model .pth files
           echo ""
-          echo "Checking for model pkl files:"
-          if [ -f "outputs/output_Dense_VAE_optimized/Dense_VAE_optimized.pkl" ]; then
-            echo "✅ Dense VAE pkl found"
-            ls -lh outputs/output_Dense_VAE_optimized/Dense_VAE_optimized.pkl
+          echo "Checking for model .pth files:"
+          if [ -f "outputs/output_Dense_VAE_optimized/dense_vae_model.pth" ]; then
+            echo "✅ Dense VAE .pth found"
+            ls -lh outputs/output_Dense_VAE_optimized/dense_vae_model.pth
           else
-            echo "⚠️ Dense VAE pkl not found"
+            echo "⚠️ Dense VAE .pth not found"
           fi
           
-          if [ -f "outputs/output_Ensemble_VAE/Ensemble_VAE.pkl" ]; then
-            echo "✅ Ensemble VAE pkl found"
-            ls -lh outputs/output_Ensemble_VAE/Ensemble_VAE.pkl
+          if [ -f "outputs/output_Ensemble_VAE/ensemble_vae_complete.pth" ]; then
+            echo "✅ Ensemble VAE .pth found"
+            ls -lh outputs/output_Ensemble_VAE/ensemble_vae_complete.pth
           else
-            echo "⚠️ Ensemble VAE pkl not found"
+            echo "⚠️ Ensemble VAE .pth not found"
           fi
           
           # Show final structure

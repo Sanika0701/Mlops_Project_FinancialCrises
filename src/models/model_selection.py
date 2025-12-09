@@ -53,8 +53,8 @@ def load_model_results():
                     wass = float(line.split(':')[1].strip())
                     results['Dense_VAE_Optimized']['wasserstein'] = wass
         
-        # Store model path
-        results['Dense_VAE_Optimized']['model_path'] = dense_vae_dir / 'Dense_VAE_optimized.pkl'
+        # Store model path - look for .pth file
+        results['Dense_VAE_Optimized']['model_path'] = dense_vae_dir / 'dense_vae_model.pth'
     
     # Read Ensemble VAE results
     if (ensemble_vae_dir / 'ensemble_validation.txt').exists():
@@ -73,8 +73,8 @@ def load_model_results():
                     wass = float(line.split(':')[1].strip())
                     results['Ensemble_VAE']['wasserstein'] = wass
         
-        # Store model path
-        results['Ensemble_VAE']['model_path'] = ensemble_vae_dir / 'Ensemble_VAE.pkl'
+        # Store model path - look for .pth file
+        results['Ensemble_VAE']['model_path'] = ensemble_vae_dir / 'ensemble_vae_complete.pth'
     
     return results
 
@@ -136,43 +136,91 @@ def select_best_model(results):
 def upload_model_to_gcs(model_name, metrics):
     """
     Upload the best model to GCS deployment location
-    Creates deployment-ready pkl file with model, scaler, and metadata
+    Loads .pth file, creates deployment-ready .pkl package, uploads to GCS
     """
     
     print("\n" + "="*60)
-    print("UPLOADING MODEL TO GCS FOR DEPLOYMENT")
+    print("CREATING & UPLOADING DEPLOYMENT PACKAGE")
     print("="*60 + "\n")
     
     try:
-        # Load the trained model pkl file
+        # Load the .pth file from training
         model_path = metrics['model_path']
         print(f"Loading model from: {model_path}")
         
-        with open(model_path, 'rb') as f:
-            model_data = pickle.load(f)
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        
+        # Load PyTorch model package
+        import torch
+        model_data = torch.load(model_path, map_location='cpu')
         
         print("✓ Model loaded successfully")
+        print(f"  Model type: {model_name}")
+        print(f"  Keys in model data: {list(model_data.keys())}")
         
-        # Prepare deployment package
-        deployment_package = {
-            'model': model_data.get('model'),
-            'scaler': model_data.get('scaler'),
-            'feature_names': model_data.get('feature_names'),
-            'model_name': model_name,
-            'training_date': datetime.now().isoformat(),
-            'performance_metrics': {
-                'ks_pass_rate': metrics['ks_pass_rate'],
-                'correlation_mae': metrics['correlation_mae'],
-                'wasserstein_distance': metrics.get('wasserstein', 0)
-            },
-            'version': 'v1.0',
-            'deployment_ready': True
-        }
+        # Extract components based on model type
+        if model_name == 'Dense_VAE_Optimized':
+            # Dense VAE structure: {'model': state_dict, 'scaler': scaler, 'features': list, 'config': dict}
+            deployment_package = {
+                'model': model_data.get('model'),           # PyTorch state dict
+                'scaler': model_data.get('scaler'),         # Fitted StandardScaler
+                'feature_names': model_data.get('features'), # List of feature names
+                'model_name': model_name,
+                'model_type': 'Dense_VAE',
+                'training_date': datetime.now().isoformat(),
+                'performance_metrics': {
+                    'ks_pass_rate': metrics['ks_pass_rate'],
+                    'correlation_mae': metrics['correlation_mae'],
+                    'wasserstein_distance': metrics.get('wasserstein', 0)
+                },
+                'config': model_data.get('config', {}),
+                'version': 'v1.0',
+                'deployment_ready': True
+            }
+        
+        elif model_name == 'Ensemble_VAE':
+            # Ensemble VAE structure: {'models': [state_dicts], 'scaler': scaler, 'features': list, 'config': dict}
+            # For deployment, use the first model or create average
+            deployment_package = {
+                'model': model_data.get('models', [])[0] if model_data.get('models') else None,  # First model
+                'scaler': model_data.get('scaler'),
+                'feature_names': model_data.get('features'),
+                'model_name': model_name,
+                'model_type': 'Ensemble_VAE',
+                'n_ensemble_models': len(model_data.get('models', [])),
+                'training_date': datetime.now().isoformat(),
+                'performance_metrics': {
+                    'ks_pass_rate': metrics['ks_pass_rate'],
+                    'correlation_mae': metrics['correlation_mae'],
+                    'wasserstein_distance': metrics.get('wasserstein', 0)
+                },
+                'config': model_data.get('config', {}),
+                'version': 'v1.0',
+                'deployment_ready': True
+            }
+        
+        else:
+            raise ValueError(f"Unknown model type: {model_name}")
+        
+        # Validate deployment package
+        if deployment_package['model'] is None:
+            raise ValueError("Model state dict is None")
+        if deployment_package['scaler'] is None:
+            raise ValueError("Scaler is None")
+        if not deployment_package['feature_names']:
+            raise ValueError("Feature names are empty")
+        
+        print("\n✓ Deployment package created:")
+        print(f"  - Model state dict: ✓")
+        print(f"  - Scaler: ✓")
+        print(f"  - Features: {len(deployment_package['feature_names'])} features")
+        print(f"  - Config: ✓")
         
         # Initialize GCS filesystem
         fs = gcsfs.GCSFileSystem()
         
-        # Upload model pkl file
+        # Upload deployment .pkl file to GCS
         deployment_pkl_path = f"{GCS_DEPLOYMENT_PATH}best_model_deployment.pkl"
         print(f"\nUploading to: {deployment_pkl_path}")
         
@@ -180,6 +228,10 @@ def upload_model_to_gcs(model_name, metrics):
             pickle.dump(deployment_package, f)
         
         print("✓ Model uploaded successfully")
+        
+        # Get file size for reporting
+        pkl_size_bytes = len(pickle.dumps(deployment_package))
+        pkl_size_kb = pkl_size_bytes / 1024
         
         # Create and upload deployment metadata JSON
         metadata = {
@@ -196,8 +248,10 @@ def upload_model_to_gcs(model_name, metrics):
                 'has_scaler': deployment_package['scaler'] is not None,
                 'feature_count': len(deployment_package['feature_names']) if deployment_package['feature_names'] else 0
             },
+            'model_config': deployment_package.get('config', {}),
             'version': 'v1.0',
-            'deployment_status': 'ready'
+            'deployment_status': 'ready',
+            'file_size_kb': pkl_size_kb
         }
         
         metadata_path = f"{GCS_DEPLOYMENT_PATH}deployment_metadata.json"
@@ -213,19 +267,33 @@ def upload_model_to_gcs(model_name, metrics):
         print("="*60)
         print(f"Model: {model_name}")
         print(f"Location: {deployment_pkl_path}")
-        print(f"Size: {len(pickle.dumps(deployment_package)) / 1024:.2f} KB")
-        print(f"Components:")
-        print(f"  - VAE Model: ✓")
-        print(f"  - Scaler: ✓")
+        print(f"Size: {pkl_size_kb:.2f} KB")
+        print(f"\nComponents:")
+        print(f"  - Model Type: {deployment_package.get('model_type', 'Unknown')}")
+        print(f"  - PyTorch State Dict: ✓")
+        print(f"  - Fitted Scaler: ✓")
         print(f"  - Feature Names: {len(deployment_package['feature_names'])} features")
-        print(f"  - Metadata: ✓")
+        print(f"  - Configuration: ✓")
+        print(f"\nPerformance:")
+        print(f"  - KS Pass Rate: {metrics['ks_pass_rate']:.2f}%")
+        print(f"  - Correlation MAE: {metrics['correlation_mae']:.4f}")
+        print(f"  - Wasserstein Distance: {metrics.get('wasserstein', 0):.2f}")
         print("="*60 + "\n")
         
         return True
         
+    except FileNotFoundError as e:
+        print(f"\n❌ Model file not found: {str(e)}")
+        print(f"Expected path: {model_path}")
+        print("\nMake sure training completed successfully and .pth file was saved.")
+        return False
+        
     except Exception as e:
-        print(f"\n❌ Error uploading model to GCS: {str(e)}")
-        print("Deployment failed - model will not be available for production use")
+        print(f"\n❌ Error creating/uploading deployment package: {str(e)}")
+        import traceback
+        print("\nFull traceback:")
+        traceback.print_exc()
+        print("\nDeployment failed - model will not be available for production use")
         return False
 
 
