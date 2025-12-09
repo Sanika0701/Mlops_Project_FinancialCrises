@@ -42,6 +42,7 @@
 # optuna>=3.5.0
 # plotly>=5.18.0
 # optuna-integration[xgboost]>=3.5.0lightgbm==4.1.0
+google-cloud-monitoring
 
 
 
