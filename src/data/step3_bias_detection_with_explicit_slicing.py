@@ -1,5 +1,5 @@
 """
-STEP 5: BIAS DETECTION WITH EXPLICIT DATA SLICING
+STEP 5: BIAS DETECTION WITH EXPLICIT DATA SLICING - WITH GCS
 
 FIXED FOR MODIFIED PIPELINE:
 - 50 companies (was 25)
@@ -7,6 +7,7 @@ FIXED FOR MODIFIED PIPELINE:
 - Quarterly data (was daily)
 - Updated temporal periods
 - Fixed SliceAnalyzer bug
+- GCS integration for input/output
 
 Implements data slicing for bias detection as required by MLOps assignment.
 
@@ -34,6 +35,8 @@ from typing import Dict, List, Tuple
 from datetime import datetime
 import json
 from scipy import stats
+from google.cloud import storage
+import io
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -244,14 +247,17 @@ class SliceAnalyzer:
 
 
 # ============================================================================
-# BIAS DETECTOR WITH EXPLICIT SLICING
+# BIAS DETECTOR WITH EXPLICIT SLICING AND GCS
 # ============================================================================
 
 class BiasDetectorWithSlicing:
-    """Bias detector with explicit data slicing implementation."""
+    """Bias detector with explicit data slicing implementation and GCS integration."""
     
-    def __init__(self, dataset_name: str):
+    def __init__(self, dataset_name: str, bucket_name: str = 'mlops-financial-stress-data', use_gcs: bool = True):
         self.dataset_name = dataset_name
+        self.bucket_name = bucket_name
+        self.use_gcs = use_gcs
+        
         self.bias_report = {
             'dataset': dataset_name,
             'timestamp': datetime.now().isoformat(),
@@ -260,6 +266,54 @@ class BiasDetectorWithSlicing:
             'slice_comparisons': [],
             'mitigation_recommendations': []
         }
+        
+        # Initialize GCS client
+        if self.use_gcs:
+            try:
+                self.storage_client = storage.Client()
+                self.bucket = self.storage_client.bucket(bucket_name)
+                logger.info(f"✓ Connected to GCS bucket: gs://{bucket_name}/")
+            except Exception as e:
+                logger.warning(f"⚠️  GCS connection failed: {e}")
+                logger.warning("  Will use local files only")
+                self.use_gcs = False
+    
+    def upload_to_gcs(self, content: str, filename: str, subfolder: str = 'data/bias_reports'):
+        """Upload text content to GCS."""
+        if not self.use_gcs:
+            return False
+        
+        try:
+            blob_path = f"{subfolder}/{filename}"
+            blob = self.bucket.blob(blob_path)
+            blob.upload_from_string(content, content_type='application/json')
+            
+            logger.info(f"  ✓ Uploaded to GCS: gs://{self.bucket_name}/{blob_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"  ✗ GCS upload failed: {e}")
+            return False
+    
+    def upload_csv_to_gcs(self, df: pd.DataFrame, filename: str, subfolder: str = 'data/bias_reports'):
+        """Upload DataFrame to GCS as CSV."""
+        if not self.use_gcs:
+            return False
+        
+        try:
+            blob_path = f"{subfolder}/{filename}"
+            blob = self.bucket.blob(blob_path)
+            
+            csv_buffer = io.StringIO()
+            df.to_csv(csv_buffer, index=False)
+            blob.upload_from_string(csv_buffer.getvalue(), content_type='text/csv')
+            
+            logger.info(f"  ✓ Uploaded to GCS: gs://{self.bucket_name}/{blob_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"  ✗ GCS upload failed: {e}")
+            return False
     
     def run_bias_detection(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         """Run complete bias detection with data slicing."""
@@ -268,6 +322,7 @@ class BiasDetectorWithSlicing:
         logger.info("="*80)
         logger.info(f"Dataset: {self.dataset_name}")
         logger.info(f"Shape: {df.shape}")
+        logger.info(f"GCS Enabled: {self.use_gcs}")
         logger.info("="*80)
         
         # === STEP 1: CREATE SLICES ===
@@ -372,7 +427,7 @@ class BiasDetectorWithSlicing:
         # === SUMMARY ===
         self._print_summary()
         
-        # Save report
+        # Save report (local + GCS)
         self._save_report()
         
         return df, self.bias_report
@@ -532,7 +587,7 @@ class BiasDetectorWithSlicing:
                 logger.info(f"   {i}. {rec}")
     
     def _save_report(self):
-        """Save bias detection report."""
+        """Save bias detection report locally and to GCS."""
         output_dir = Path("data/bias_reports")
         output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -549,43 +604,74 @@ class BiasDetectorWithSlicing:
                     return None
                 return super().default(obj)
         
-        # Save JSON report
+        # Save JSON report locally
         json_path = output_dir / f"bias_report_{self.dataset_name}_{timestamp}.json"
         
         with open(json_path, 'w') as f:
             json.dump(self.bias_report, f, indent=2, cls=NumpyEncoder)
         
-        logger.info(f"\n💾 Bias report saved: {json_path}")
+        logger.info(f"\n💾 Bias report saved locally: {json_path}")
         
-        # Save slice statistics as CSV
+        # Upload JSON to GCS
+        if self.use_gcs:
+            json_content = json.dumps(self.bias_report, indent=2, cls=NumpyEncoder)
+            self.upload_to_gcs(json_content, f"bias_report_{self.dataset_name}_{timestamp}.json")
+        
+        # Save slice statistics as CSV locally and to GCS
         for slice_type, metrics in self.bias_report['slicing_summary'].items():
             if metrics:
-                csv_path = output_dir / f"{slice_type}_statistics_{timestamp}.csv"
+                csv_filename = f"{slice_type}_statistics_{timestamp}.csv"
+                csv_path = output_dir / csv_filename
                 metrics_df = pd.DataFrame(metrics)
                 metrics_df.to_csv(csv_path, index=False)
-                logger.info(f"💾 {slice_type} statistics: {csv_path}")
+                logger.info(f"💾 {slice_type} statistics saved locally: {csv_path}")
+                
+                # Upload CSV to GCS
+                if self.use_gcs:
+                    self.upload_csv_to_gcs(metrics_df, csv_filename)
 
 
 def main():
-    """Execute bias detection with data slicing."""
+    """Execute bias detection with data slicing and GCS integration."""
     
-    features_dir = Path("data/processed/")
+    # GCS configuration
+    bucket_name = 'mlops-financial-stress-data'
+    use_gcs = True
     
-    # Find dataset
-    candidates = [
-        "features_engineered.csv"
-    ]
+    # Initialize GCS client and download data
+    if use_gcs:
+        try:
+            logger.info(f"Connecting to GCS bucket: gs://{bucket_name}/")
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(bucket_name)
+            
+            # Download features_engineered.csv from GCS
+            blob_path = "data/processed/features_engineered.csv"
+            blob = bucket.blob(blob_path)
+            
+            local_dir = Path("data/processed")
+            local_dir.mkdir(parents=True, exist_ok=True)
+            local_path = local_dir / "features_engineered.csv"
+            
+            logger.info(f"Downloading: gs://{bucket_name}/{blob_path}")
+            blob.download_to_filename(str(local_path))
+            
+            size_mb = local_path.stat().st_size / (1024 * 1024)
+            logger.info(f"✓ Downloaded: {local_path} ({size_mb:.2f} MB)")
+            
+            filepath = local_path
+            
+        except Exception as e:
+            logger.warning(f"⚠️  GCS download failed: {e}")
+            logger.info("Falling back to local file...")
+            use_gcs = False
+            filepath = Path("data/processed/features_engineered.csv")
+    else:
+        filepath = Path("data/processed/features_engineered.csv")
     
-    filepath = None
-    for candidate in candidates:
-        if (features_dir / candidate).exists():
-            filepath = features_dir / candidate
-            logger.info(f"Found: {candidate}")
-            break
-    
-    if not filepath:
-        logger.error("❌ No merged features found!")
-        logger.error("Run Step 3 or Step 4 first")
+    if not filepath.exists():
+        logger.error("❌ No features_engineered.csv found!")
+        logger.error("Run feature engineering pipeline first")
         return
     
     logger.info(f"Loading: {filepath}")
@@ -598,7 +684,11 @@ def main():
             logger.info(f"   ✓ Converted Date to datetime: {df['Date'].dtype}")
     
     # Run bias detection
-    detector = BiasDetectorWithSlicing(dataset_name=filepath.stem)
+    detector = BiasDetectorWithSlicing(
+        dataset_name=filepath.stem,
+        bucket_name=bucket_name,
+        use_gcs=use_gcs
+    )
     df_analyzed, report = detector.run_bias_detection(df)
     
     # Final status
@@ -615,7 +705,11 @@ def main():
         logger.warning(f"\n⚠️  {total_biases} biases detected")
         logger.warning("   Review bias report and apply mitigation strategies")
     
-    logger.info("\n📁 Reports saved to: data/bias_reports/")
+    logger.info(f"\n📁 Reports saved:")
+    logger.info(f"   Local: data/bias_reports/")
+    if use_gcs:
+        logger.info(f"   GCS: gs://{bucket_name}/data/bias_reports/")
+    
     logger.info("\n➡️  Next: Apply stratified sampling in model training")
 
 

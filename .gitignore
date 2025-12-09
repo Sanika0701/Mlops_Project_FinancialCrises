@@ -62,6 +62,8 @@ mlruns/
 *.png
 *.pkl
 *.pth
+*.html
+*.h5
 # Airflow variables
 configs/airflow_variables.json
 

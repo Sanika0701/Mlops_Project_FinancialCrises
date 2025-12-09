@@ -1,7 +1,7 @@
 ================================================================================
 DROPPED FEATURES LOG
 ================================================================================
-Date: 2025-12-03T18:45:09.018162
+Date: 2025-12-06T17:16:01.600174
 Input file: data/features/quarterly_data_with_targets.csv
 Output file: data/features/quarterly_data_with_targets_clean.csv
 Original columns: 226
@@ -23,84 +23,127 @@ FEATURES DROPPED:
 9. q_return
 10. next_q_return
 11. Revenue_growth_1q
-12. Revenue_growth_4q
-13. Net_Income_growth_1q
-14. Net_Income_growth_4q
-15. Gross_Profit_growth_1q
-16. Gross_Profit_growth_4q
-17. Operating_Income_growth_1q
-18. Operating_Income_growth_4q
-19. eps_growth_1q
-20. eps_growth_4q
-21. Net_Income
-22. Gross_Profit
-23. Operating_Income
-24. EBITDA
-25. Total_Debt
-26. Total_Assets
-27. Total_Liabilities
-28. Total_Equity
-29. Current_Assets
-30. Current_Liabilities
-31. Long_Term_Debt
-32. Short_Term_Debt
-33. Cash
-34. Current_Ratio
-35. Stock_Price
-36. q_price
-37. q_volume
-38. q_high
-39. q_low
-40. q_open
-41. q_price_range_pct
-42. Open
-43. High
-44. Low
-45. Close
-46. Adj_Close
-47. Volume
-48. pe_ratio
-49. debt_to_assets
-50. debt_to_ebitda
-51. cash_ratio
-52. revenue_acceleration
-53. net_margin_trend
-54. return_momentum
-55. revenue_declining
-56. high_leverage
-57. liquidity_risk
-58. composite_stress_score
-59. leverage_x_vix
-60. margin_x_market
-61. revenue_decline_x_vix
-62. excess_return
-63. return_vs_sector
-64. revenue_growth_vs_sector
-65. debt_x_rates
-66. net_margin_zscore
-67. roa_zscore
-68. roe_zscore
-69. debt_to_assets_zscore
-70. log_Revenue
-71. log_Total_Assets
-72. log_Total_Debt
-73. log_Cash
-74. crisis_flag
-75. Quarter_End_Date
-76. Original_Quarter_End
-77. Company_Name
-78. profit_margin_calculated
-79. return_calculated
+12. Net_Income_growth_1q
+13. Gross_Profit_growth_1q
+14. Operating_Income_growth_1q
+15. eps_growth_1q
+16. Net_Income
+17. Gross_Profit
+18. Operating_Income
+19. EBITDA
+20. Total_Debt
+21. Total_Assets
+22. Total_Liabilities
+23. Total_Equity
+24. Current_Assets
+25. Current_Liabilities
+26. Long_Term_Debt
+27. Short_Term_Debt
+28. Cash
+29. Current_Ratio
+30. Stock_Price
+31. q_price
+32. q_volume
+33. q_high
+34. q_low
+35. q_open
+36. q_price_range_pct
+37. Open
+38. High
+39. Low
+40. Close
+41. Adj_Close
+42. Volume
+43. pe_ratio
+44. debt_to_assets
+45. debt_to_ebitda
+46. cash_ratio
+47. revenue_acceleration
+48. net_margin_trend
+49. return_momentum
+50. revenue_declining
+51. high_leverage
+52. liquidity_risk
+53. composite_stress_score
+54. leverage_x_vix
+55. margin_x_market
+56. revenue_decline_x_vix
+57. excess_return
+58. return_vs_sector
+59. revenue_growth_vs_sector
+60. debt_x_rates
+61. net_margin_zscore
+62. roa_zscore
+63. roe_zscore
+64. debt_to_assets_zscore
+65. log_Revenue
+66. log_Total_Assets
+67. log_Total_Debt
+68. log_Cash
+69. crisis_flag
+70. Quarter_End_Date
+71. Original_Quarter_End
+72. Company_Name
+73. profit_margin_calculated
+74. return_calculated
+75. Revenue_growth_4q
+76. Net_Income_growth_4q
+77. Gross_Profit_growth_4q
+78. Operating_Income_growth_4q
+79. eps_growth_4q
 
 ================================================================================
 TARGET COLUMNS PRESERVED:
 ================================================================================
 
-✅ target_revenue
-✅ target_eps
-✅ target_debt_equity
-✅ target_profit_margin
-✅ target_stock_return
+[KEEP] target_revenue
+[KEEP] target_eps
+[KEEP] target_debt_equity
+[KEEP] target_profit_margin
+[KEEP] target_stock_return
+
+================================================================================
+SAFE PREDICTIVE FEATURES KEPT:
+================================================================================
+
+[KEEP] Debt_to_Equity_lag_1q
+[KEEP] Debt_to_Equity_lag_2q
+[KEEP] Debt_to_Equity_lag_4q
+[KEEP] Total_Debt_lag_1q
+[KEEP] Total_Debt_lag_2q
+[KEEP] Total_Debt_lag_4q
+[KEEP] Total_Assets_lag_1q
+[KEEP] Total_Assets_lag_2q
+[KEEP] Total_Assets_lag_4q
+[KEEP] debt_to_assets_rolling4q_mean
+[KEEP] debt_to_assets_rolling4q_std
+[KEEP] q_return_lag_1q
+[KEEP] q_return_lag_2q
+[KEEP] q_return_lag_4q
+[KEEP] q_return_rolling4q_mean
+[KEEP] q_return_rolling4q_std
+[KEEP] sp500_q_return_lag_1q
+[KEEP] sp500_q_return_lag_2q
+[KEEP] sector_avg_return
+[KEEP] Revenue_lag_1q
+[KEEP] Revenue_lag_2q
+[KEEP] Revenue_lag_4q
+[KEEP] Net_Income_lag_1q
+[KEEP] Net_Income_lag_2q
+[KEEP] Current_Ratio_lag_1q
+[KEEP] Current_Ratio_lag_2q
+[KEEP] Revenue_rolling4q_mean
+[KEEP] Revenue_rolling4q_std
+[KEEP] Net_Income_rolling4q_mean
+[KEEP] net_margin_rolling4q_mean
+[KEEP] roa_rolling4q_mean
+[KEEP] roe_rolling4q_mean
+
+================================================================================
+SAFE FEATURES MISSING FROM DATA:
+================================================================================
+
+None - all expected safe features present!
 
 ================================================================================
 FEATURES NOT FOUND (already absent):

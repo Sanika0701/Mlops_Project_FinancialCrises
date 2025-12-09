@@ -1,14 +1,12 @@
 """
-COMPLETE QUARTERLY DATA PIPELINE - WITH FRED & MARKET DATA
-===========================================================
+COMPLETE QUARTERLY DATA PIPELINE - WITH GCS INTEGRATION
+=========================================================
 
-This script creates ONE ROW PER QUARTER PER COMPANY with:
-1. Quarterly fundamentals (Balance Sheet + Income Statement)  
-2. Quarterly stock price aggregates
-3. Quarterly macro aggregates (FRED: GDP, CPI, Unemployment, etc.)
-4. Quarterly market aggregates (VIX, SP500)
-
-Output: ONE ROW PER QUARTER PER COMPANY with all features
+Pipeline Flow:
+1. Download raw data from GCS bucket
+2. Clean and process quarterly data
+3. Merge fundamentals, prices, FRED, and market data
+4. Upload processed data back to GCS (2 files: complete + macro only)
 
 Author: Financial ML Pipeline
 Date: 2025
@@ -19,6 +17,8 @@ import numpy as np
 from pathlib import Path
 from datetime import timedelta
 import logging
+from google.cloud import storage
+import io
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,15 +26,103 @@ logger = logging.getLogger(__name__)
 
 
 class QuarterlyDataPipeline:
-    """Clean and merge financial data at quarterly frequency."""
+    """Clean and merge financial data at quarterly frequency with GCS integration."""
     
     REPORTING_LAG_DAYS = 45  # Quarterly financials reported 45 days after quarter end
     
-    def __init__(self, raw_dir='data/raw', output_dir='data/processed'):
-        self.raw_dir = Path(raw_dir)
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, 
+                 bucket_name='mlops-financial-stress-data',
+                 local_raw_dir='data/raw',
+                 local_output_dir='data/processed',
+                 use_gcs=True):
         
+        self.bucket_name = bucket_name
+        self.local_raw_dir = Path(local_raw_dir)
+        self.local_output_dir = Path(local_output_dir)
+        self.use_gcs = use_gcs
+        
+        # Create local directories
+        self.local_raw_dir.mkdir(parents=True, exist_ok=True)
+        self.local_output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize GCS client
+        if self.use_gcs:
+            try:
+                self.storage_client = storage.Client()
+                self.bucket = self.storage_client.bucket(bucket_name)
+                logger.info(f"✓ Connected to GCS bucket: gs://{bucket_name}/")
+            except Exception as e:
+                logger.warning(f"⚠️  GCS connection failed: {e}")
+                logger.warning("  Will use local files only")
+                self.use_gcs = False
+    
+    # ========== GCS FUNCTIONS ==========
+    
+    def download_from_gcs(self, filename, subfolder='data/raw'):
+        """Download a file from GCS to local storage."""
+        if not self.use_gcs:
+            logger.info(f"  Using local file: {self.local_raw_dir / filename}")
+            return self.local_raw_dir / filename
+        
+        try:
+            blob_path = f"{subfolder}/{filename}"
+            blob = self.bucket.blob(blob_path)
+            
+            local_path = self.local_raw_dir / filename
+            blob.download_to_filename(str(local_path))
+            
+            size_mb = local_path.stat().st_size / (1024 * 1024)
+            logger.info(f"  ✓ Downloaded: {filename} ({size_mb:.2f} MB)")
+            return local_path
+            
+        except Exception as e:
+            logger.error(f"  ✗ Failed to download {filename}: {e}")
+            # Try local fallback
+            local_path = self.local_raw_dir / filename
+            if local_path.exists():
+                logger.info(f"  Using local fallback: {filename}")
+                return local_path
+            raise
+    
+    def upload_to_gcs(self, df, filename, subfolder='data/processed'):
+        """Upload DataFrame to GCS."""
+        if not self.use_gcs:
+            logger.info(f"  GCS upload disabled - file saved locally only")
+            return False
+        
+        try:
+            blob_path = f"{subfolder}/{filename}"
+            blob = self.bucket.blob(blob_path)
+            
+            # Convert DataFrame to CSV
+            csv_buffer = io.StringIO()
+            df.to_csv(csv_buffer, index=False)
+            
+            # Upload
+            blob.upload_from_string(csv_buffer.getvalue(), content_type='text/csv')
+            
+            size_mb = len(csv_buffer.getvalue()) / (1024 * 1024)
+            logger.info(f"  ✓ Uploaded to GCS: gs://{self.bucket_name}/{blob_path} ({size_mb:.2f} MB)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"  ✗ GCS upload failed: {e}")
+            return False
+    
+    def save_data(self, df, filename):
+        """Save data locally and to GCS."""
+        # Save locally
+        local_path = self.local_output_dir / filename
+        df.to_csv(local_path, index=False)
+        
+        size_mb = local_path.stat().st_size / (1024 * 1024)
+        rows = len(df)
+        logger.info(f"  ✓ Saved locally: {filename} ({rows:,} rows, {size_mb:.2f} MB)")
+        
+        # Upload to GCS
+        if self.use_gcs:
+            self.upload_to_gcs(df, filename)
+    
     # ========== HELPER FUNCTIONS ==========
     
     def get_quarter_end(self, date):
@@ -189,9 +277,6 @@ class QuarterlyDataPipeline:
         df = self.add_quarter_info(df)
         
         # Identify quarterly vs daily columns
-        # GDP, Unemployment, CPI are quarterly
-        # Others are daily
-        
         quarterly_cols = ['GDP', 'CPI', 'Unemployment_Rate']
         daily_cols = [col for col in df.columns if col not in quarterly_cols + ['Date', 'Year', 'Quarter_Num', 'Quarter', 'Quarter_End_Date']]
         
@@ -422,27 +507,55 @@ class QuarterlyDataPipeline:
     # ========== MAIN PIPELINE ==========
     
     def run_pipeline(self):
-        """Execute complete pipeline."""
+        """Execute complete pipeline with GCS integration."""
         logger.info("\n" + "="*80)
-        logger.info("COMPLETE QUARTERLY DATA PIPELINE")
+        logger.info("COMPLETE QUARTERLY DATA PIPELINE WITH GCS")
+        logger.info("="*80)
+        logger.info(f"GCS Bucket: gs://{self.bucket_name}/")
+        logger.info(f"GCS Enabled: {self.use_gcs}")
         logger.info("="*80)
         
+        # Step 0: Download raw files from GCS
+        logger.info("\n" + "="*80)
+        logger.info("STEP 0: DOWNLOADING RAW DATA FROM GCS")
+        logger.info("="*80)
+        
+        required_files = [
+            'company_balance_raw.csv',
+            'company_income_raw.csv',
+            'company_prices_raw.csv',
+            'fred_raw.csv',
+            'market_raw.csv'
+        ]
+        
+        downloaded_files = {}
+        for filename in required_files:
+            try:
+                local_path = self.download_from_gcs(filename)
+                downloaded_files[filename] = local_path
+            except Exception as e:
+                logger.error(f"✗ Failed to get {filename}: {e}")
+                return None
+        
         # Load all raw files
-        logger.info("\nLoading raw files...")
+        logger.info("\n" + "="*80)
+        logger.info("LOADING RAW DATA")
+        logger.info("="*80)
+        
         try:
-            balance_raw = pd.read_csv(self.raw_dir / 'company_balance_raw.csv')
-            income_raw = pd.read_csv(self.raw_dir / 'company_income_raw.csv')
-            prices_raw = pd.read_csv(self.raw_dir / 'company_prices_raw.csv')
-            fred_raw = pd.read_csv(self.raw_dir / 'fred_raw.csv')
-            market_raw = pd.read_csv(self.raw_dir / 'market_raw.csv')
+            balance_raw = pd.read_csv(downloaded_files['company_balance_raw.csv'])
+            income_raw = pd.read_csv(downloaded_files['company_income_raw.csv'])
+            prices_raw = pd.read_csv(downloaded_files['company_prices_raw.csv'])
+            fred_raw = pd.read_csv(downloaded_files['fred_raw.csv'])
+            market_raw = pd.read_csv(downloaded_files['market_raw.csv'])
             
             logger.info(f"✓ Balance Sheet: {balance_raw.shape}")
             logger.info(f"✓ Income Statement: {income_raw.shape}")
             logger.info(f"✓ Stock Prices: {prices_raw.shape}")
             logger.info(f"✓ FRED Data: {fred_raw.shape}")
             logger.info(f"✓ Market Data: {market_raw.shape}")
-        except FileNotFoundError as e:
-            logger.error(f"✗ Error: {e}")
+        except Exception as e:
+            logger.error(f"✗ Error loading data: {e}")
             return None
         
         # Step 1: Clean fundamentals
@@ -499,9 +612,27 @@ class QuarterlyDataPipeline:
         # Sort and save
         validated_df = validated_df.sort_values(['Company', 'Date']).reset_index(drop=True)
         
-        output_path = self.output_dir / 'quarterly_data_complete.csv'
-        validated_df.to_csv(output_path, index=False)
-        logger.info(f"\n✓ Saved to: {output_path}")
+        # Step 7: Save locally and upload to GCS
+        logger.info("\n" + "="*80)
+        logger.info("STEP 7: SAVING OUTPUT")
+        logger.info("="*80)
+        
+        # Save complete dataset
+        self.save_data(validated_df, 'quarterly_data_complete.csv')
+        
+        # Save macro features only
+        macro_cols = ['Date', 'GDP', 'CPI', 'Unemployment_Rate', 'Federal_Funds_Rate', 
+                      'Yield_Curve_Spread', 'Consumer_Confidence', 'Oil_Price', 
+                      'Trade_Balance', 'Corporate_Bond_Spread', 'TED_Spread', 
+                      'Treasury_10Y_Yield', 'Financial_Stress_Index', 'High_Yield_Spread', 
+                      'VIX', 'SP500_Close']
+        
+        # Extract only columns that exist
+        available_macro_cols = [col for col in macro_cols if col in validated_df.columns]
+        macro_df = validated_df[available_macro_cols].drop_duplicates().sort_values('Date')
+        
+        logger.info(f"\n  Creating macro_features.csv with {len(available_macro_cols)} columns...")
+        self.save_data(macro_df, 'macro_features.csv')
         
         # Summary
         logger.info("\n" + "="*80)
@@ -512,6 +643,15 @@ class QuarterlyDataPipeline:
         logger.info(f"   Quarters: {len(validated_df):,}")
         logger.info(f"   Companies: {validated_df['Company'].nunique()}")
         logger.info(f"   Features: {validated_df.shape[1]}")
+        
+        logger.info(f"\n📁 Output Locations:")
+        logger.info(f"   Local: {self.local_output_dir / 'quarterly_data_complete.csv'}")
+        logger.info(f"   Local: {self.local_output_dir / 'macro_features.csv'}")
+        if self.use_gcs:
+            logger.info(f"   GCS: gs://{self.bucket_name}/data/processed/quarterly_data_complete.csv")
+            logger.info(f"   GCS: gs://{self.bucket_name}/data/processed/macro_features.csv")
+            logger.info(f"   View: https://console.cloud.google.com/storage/browser/{self.bucket_name}/data/processed")
+        
         logger.info(f"\n   Includes:")
         logger.info(f"   ✓ Company fundamentals (Balance + Income)")
         logger.info(f"   ✓ Stock prices & returns")
@@ -524,19 +664,33 @@ class QuarterlyDataPipeline:
 # ========== USAGE ==========
 
 if __name__ == "__main__":
+    # Initialize pipeline
     pipeline = QuarterlyDataPipeline(
-        raw_dir='data/raw',
-        output_dir='data/processed'
+        bucket_name='mlops-financial-stress-data',
+        local_raw_dir='data/raw',
+        local_output_dir='data/processed',
+        use_gcs=True  # Set to False to disable GCS and use local files only
     )
     
+    # Run pipeline
     quarterly_data = pipeline.run_pipeline()
     
     if quarterly_data is not None:
-        print("\n✅ SUCCESS! Complete quarterly dataset ready.")
-        print(f"\nOutput: data/processed/quarterly_data_complete.csv")
+        print("\n" + "="*80)
+        print("✅ SUCCESS! Complete quarterly dataset ready.")
+        print("="*80)
+        print(f"\nLocal Outputs:")
+        print(f"  1. data/processed/quarterly_data_complete.csv")
+        print(f"  2. data/processed/macro_features.csv")
+        print(f"\nGCS Outputs:")
+        print(f"  gs://mlops-financial-stress-data/data/processed/quarterly_data_complete.csv")
+        print(f"  gs://mlops-financial-stress-data/data/processed/macro_features.csv")
         print(f"\nFormat: ONE ROW PER QUARTER PER COMPANY")
-        print(f"\nIncludes:")
+        print(f"\nDataset includes:")
         print(f"  • Fundamentals (Revenue, Assets, Debt, etc.)")
         print(f"  • Stock metrics (q_return, q_price, q_volume)")
         print(f"  • Macro data (GDP, CPI, Unemployment)")
         print(f"  • Market data (VIX, SP500)")
+        print("="*80)
+    else:
+        print("\n✗ Pipeline failed. Check logs above for errors.")

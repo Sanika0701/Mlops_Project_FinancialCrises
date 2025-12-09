@@ -1,11 +1,12 @@
 """
-MODIFIED STEP 0: Data Collection (Cleaned Version)
+MODIFIED STEP 0: Data Collection (Cleaned Version) + GCS Upload
 
 Changes vs original:
 - Start date: 1990-01-01 (was 2005)
 - Companies: 100 (was 25)
 - Frequency: Quarterly for company prices (was weekly/daily)
 - Fundamentals: Direct Alpha Vantage API fetch (no cache)
+- GCS: Automatic upload to Google Cloud Storage
 """
 
 import pandas as pd
@@ -13,9 +14,14 @@ import numpy as np
 import requests
 import time
 import calendar
+import os
+import json
+import io
 from pandas_datareader import data as pdr
 from datetime import datetime
 from pathlib import Path
+from google.cloud import storage
+from google.oauth2 import service_account
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -29,6 +35,9 @@ END_DATE = datetime.now().strftime("%Y-%m-%d")
 
 RAW_DIR = Path("data/raw")
 RAW_DIR.mkdir(parents=True, exist_ok=True)
+
+# GCS Configuration
+GCS_BUCKET = os.getenv("GCS_BUCKET", "mlops-financial-stress-data")
 
 # Alpha Vantage keys (can add more keys if needed)
 API_KEYS = ["XBAUMM6ATPHUYXTD"]
@@ -46,6 +55,91 @@ def switch_api_key():
     global current_key_index
     current_key_index += 1
 
+
+# =============================================================================
+# GCS UPLOAD FUNCTIONS
+# =============================================================================
+
+def get_gcs_client():
+    """Create GCS client with proper credentials."""
+    try:
+        credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+        
+        if not credentials_path:
+            print("  ⚠️  No GOOGLE_APPLICATION_CREDENTIALS environment variable set")
+            return None
+            
+        if not os.path.exists(credentials_path):
+            print(f"  ⚠️  Credentials file not found at: {credentials_path}")
+            return None
+        
+        try:
+            with open(credentials_path, 'r') as f:
+                cred_data = json.load(f)
+                if 'type' not in cred_data:
+                    print(f"  ⚠️  Invalid credentials file format")
+                    return None
+        except json.JSONDecodeError:
+            print(f"  ⚠️  Credentials file is not valid JSON")
+            return None
+        
+        credentials = service_account.Credentials.from_service_account_file(
+            credentials_path,
+            scopes=['https://www.googleapis.com/auth/cloud-platform']
+        )
+        
+        client = storage.Client(credentials=credentials, project=credentials.project_id)
+        return client
+            
+    except Exception as e:
+        print(f"  ⚠️  Could not create GCS client: {e}")
+        return None
+
+def save_to_gcs(df, filename, bucket_name=None):
+    """Save DataFrame directly to GCS."""
+    if bucket_name is None:
+        bucket_name = GCS_BUCKET
+        
+    try:
+        client = get_gcs_client()
+        
+        if client is None:
+            print(f"  ✗ GCS upload skipped: No credentials available")
+            return False
+        
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(f"data/raw/{filename}")
+        
+        csv_buffer = io.StringIO()
+        if isinstance(df.index, pd.DatetimeIndex) or df.index.name == "Date":
+            df.to_csv(csv_buffer, index=True)
+        else:
+            df.to_csv(csv_buffer, index=False)
+        
+        blob.upload_from_string(csv_buffer.getvalue(), content_type='text/csv')
+        
+        size_mb = len(csv_buffer.getvalue()) / (1024 * 1024)
+        print(f"  ✓ GCS: gs://{bucket_name}/data/raw/{filename} ({size_mb:.2f} MB)")
+        return True
+        
+    except Exception as e:
+        print(f"  ✗ GCS upload failed: {str(e)}")
+        return False
+
+def save_locally_and_gcs(df, filename):
+    """Save both locally and to GCS."""
+    # Save locally first
+    local_path = RAW_DIR / filename
+    if isinstance(df.index, pd.DatetimeIndex) or df.index.name == "Date":
+        df.to_csv(local_path, index=True)
+    else:
+        df.to_csv(local_path, index=False)
+    
+    size_mb = local_path.stat().st_size / (1024 * 1024)
+    print(f"  ✓ Local: {local_path} ({size_mb:.2f} MB)")
+    
+    # Then upload to GCS
+    save_to_gcs(df, filename)
 
 # =============================================================================
 # EXPANDED COMPANIES - 100 TOTAL
@@ -400,10 +494,9 @@ def fetch_fred_raw():
     df_fred = pd.DataFrame(fred_data)
     df_fred.index.name = "Date"
 
-    out = RAW_DIR / "fred_raw.csv"
-    df_fred.to_csv(out)
+    print(f"\nSaving FRED data...")
+    save_locally_and_gcs(df_fred, "fred_raw.csv")
 
-    print(f"\nSaved: {out}")
     print(f"Success: {successful}/{len(FRED_SERIES)} FRED series")
     if failed:
         print(f"Warning - failed series: {', '.join(failed)}")
@@ -462,10 +555,9 @@ def fetch_market_raw():
     df_market = pd.DataFrame(market_data)
     df_market.index.name = "Date"
 
-    out = RAW_DIR / "market_raw.csv"
-    df_market.to_csv(out)
+    print(f"\nSaving market data...")
+    save_locally_and_gcs(df_market, "market_raw.csv")
 
-    print(f"\nSaved: {out}")
     print(f"Success: {successful}/{len(MARKET_TICKERS)} market series")
 
     return df_market
@@ -553,10 +645,9 @@ def fetch_company_prices_raw():
     df_all = pd.concat(all_data, axis=0)
     df_all.index.name = "Date"
 
-    out = RAW_DIR / "company_prices_raw.csv"
-    df_all.to_csv(out, index=True)
+    print(f"\nSaving company prices...")
+    save_locally_and_gcs(df_all, "company_prices_raw.csv")
 
-    print(f"\nSaved: {out}")
     print(f"Success: {len(all_data)}/{NUM_COMPANIES} companies")
     if failed_companies:
         print(f"WARNING: Failed companies: {', '.join(failed_companies)}")
@@ -734,8 +825,8 @@ def fetch_company_fundamentals_raw():
     df_inc = None
     if all_income:
         df_inc = pd.concat(all_income, ignore_index=True)
-        out_inc = RAW_DIR / "company_income_raw.csv"
-        df_inc.to_csv(out_inc, index=False)
+        print(f"  Saving income statements...")
+        save_locally_and_gcs(df_inc, "company_income_raw.csv")
         print(f"  ✓ Income saved: {len(all_income)} companies, {len(df_inc)} quarters")
     else:
         print("  WARNING: No income data collected")
@@ -744,8 +835,8 @@ def fetch_company_fundamentals_raw():
     df_bal = None
     if all_balance:
         df_bal = pd.concat(all_balance, ignore_index=True)
-        out_bal = RAW_DIR / "company_balance_raw.csv"
-        df_bal.to_csv(out_bal, index=False)
+        print(f"  Saving balance sheets...")
+        save_locally_and_gcs(df_bal, "company_balance_raw.csv")
         print(f"  ✓ Balance saved: {len(all_balance)} companies, {len(df_bal)} quarters")
     else:
         print("  WARNING: No balance data collected")
@@ -764,14 +855,23 @@ def fetch_company_fundamentals_raw():
 def main():
     """Main data collection pipeline (FRED, Market, Prices, Fundamentals)."""
     print("\n" + "=" * 70)
-    print("MODIFIED FINANCIAL DATA LOADER - QUARTERLY & 100 COMPANIES")
+    print("MODIFIED FINANCIAL DATA LOADER - QUARTERLY & 100 COMPANIES + GCS")
     print("=" * 70)
     print("CHANGES:")
     print(f"  - Start date: {START_DATE} (was 2005)")
     print(f"  - Companies: {NUM_COMPANIES} (expanded from 25)")
     print("  - Company prices: Quarterly (3mo, was weekly/daily)")
     print("  - Fundamentals: Direct Alpha Vantage API fetch (no cache)")
+    print(f"  - GCS Bucket: gs://{GCS_BUCKET}/data/raw/")
     print("=" * 70)
+    
+    # Check credentials
+    creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+    if creds_path:
+        print(f"\n✓ GCS Credentials: {creds_path}")
+    else:
+        print("\n⚠️  No GOOGLE_APPLICATION_CREDENTIALS - GCS upload will be skipped")
+    
     print("\n⚠️  ALPHA VANTAGE API KEY REQUIRED:")
     print(f"  - Current key: {API_KEYS[0]}")
     print("  - Free tier: 25 calls/day (we need 200+ calls for 100 companies)")
@@ -796,6 +896,8 @@ def main():
         print(f"  ✓ {NUM_COMPANIES} companies")
         print("  ✓ Quarterly company price data")
         print(f"  ✓ Data from {START_DATE}")
+        print(f"  ✓ Files uploaded to GCS: gs://{GCS_BUCKET}/data/raw/")
+        
         print("\nFiles created in data/raw/:")
         for f in sorted(RAW_DIR.glob("*.csv")):
             size = f.stat().st_size / (1024 * 1024)
@@ -804,6 +906,10 @@ def main():
             except Exception:
                 rows = -1
             print(f"  {f.name:30} {size:6.2f} MB  ({rows:7,} rows)")
+        
+        print("\n✓ Check GCS bucket:")
+        print(f"  https://console.cloud.google.com/storage/browser/{GCS_BUCKET}/data/raw")
+        
         print("=" * 70)
         print("Ready for Step 1: Data Cleaning!")
         print("=" * 70)
