@@ -706,9 +706,10 @@ jobs:
           echo "🔍 Running Model Monitoring..."
           
           python src/monitoring/gcp_monitoring_setup.py \
-            --models-dir models/best_models \
-            --reference-data data/splits/train_data.csv \
-            --logs-dir logs/monitoring
+            --project-id ninth-iris-422916-f2 \
+            --monitoring-report logs/monitoring/monitoring_report_latest.json \
+            --create-dashboard \
+            --create-alerts
           
           # Capture exit code
           MONITORING_EXIT=$?
@@ -946,9 +947,10 @@ jobs:
           echo "📊 Creating monitoring baseline..."
           
           python src/monitoring/gcp_monitoring_setup.py \
-            --models-dir models/best_models \
-            --reference-data data/splits/train_data.csv \
-            --logs-dir logs/monitoring
+            --project-id ninth-iris-422916-f2 \
+            --monitoring-report logs/monitoring/monitoring_report_latest.json \
+            --create-dashboard \
+            --create-alerts
           
           echo "✅ Baseline created"
       
