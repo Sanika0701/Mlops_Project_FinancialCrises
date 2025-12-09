@@ -338,7 +338,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install install pandas numpy matplotlib seaborn scipy scikit-learn python-dotenv
+          pip install pandas numpy matplotlib seaborn scipy scikit-learn python-dotenv
       
       - name: Download trained models
         uses: actions/download-artifact@v4
