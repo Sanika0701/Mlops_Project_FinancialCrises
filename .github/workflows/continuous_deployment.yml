@@ -654,6 +654,102 @@ jobs:
             data/splits/test_data.csv
           retention-days: 7
         continue-on-error: true
+   #NEW: Model Monitoring Job
+  monitor-models:
+    runs-on: ubuntu-latest
+    needs: [run-tests]
+    # Only run on schedule or manual trigger
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download models and data from GCS
+        run: |
+          echo "📥 Downloading models and data..."
+          mkdir -p models/best_models data/splits
+          
+          # Download trained models
+          gsutil -m cp gs://${{ env.GCP_BUCKET }}/models/best_models/*.pkl models/best_models/ || echo "Models not found"
+          
+          # Download data splits for monitoring
+          gsutil -m cp gs://${{ env.GCP_BUCKET }}/data/splits/*.csv data/splits/ || echo "Data not found"
+          
+          echo "✅ Download complete"
+      
+      - name: Run model monitoring
+        id: monitoring
+        run: |
+          echo "🔍 Running Model Monitoring..."
+          
+          python src/monitoring/model_monitor.py \
+            --models-dir models/best_models \
+            --reference-data data/splits/train_data.csv \
+            --logs-dir logs/monitoring
+          
+          # Capture exit code
+          MONITORING_EXIT=$?
+          echo "monitoring_exit_code=$MONITORING_EXIT" >> $GITHUB_OUTPUT
+          
+          echo "✅ Monitoring complete"
+        continue-on-error: true
+      
+      - name: Upload monitoring logs to GCS
+        if: always()
+        run: |
+          echo "📤 Uploading monitoring logs..."
+          
+          if [ -d "logs/monitoring" ]; then
+            gsutil -m cp logs/monitoring/*.json gs://${{ env.GCP_BUCKET }}/logs/monitoring/
+            echo "✅ Logs uploaded"
+          fi
+        continue-on-error: true
+      
+      - name: Upload monitoring artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring-reports
+          path: logs/monitoring/*.json
+          retention-days: 30
+        continue-on-error: true
+      
+      - name: Send monitoring notification
+        if: steps.monitoring.outputs.monitoring_exit_code == '1'
+        run: |
+          echo "🚨 MONITORING ALERT TRIGGERED"
+          echo "Critical issues detected - retraining recommended"
+          echo "Check monitoring logs for details"
+      
+      # Trigger retraining if monitoring detects issues
+      - name: Trigger retraining workflow
+        if: steps.monitoring.outputs.monitoring_exit_code == '1'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'train.yml',
+              ref: 'main'
+            })
 
   train-unified-models:
     runs-on: ubuntu-latest
@@ -665,6 +761,14 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
       
       - name: Free disk space
         run: |
@@ -792,10 +896,60 @@ jobs:
             models/best_models/*.md
           retention-days: 90
         continue-on-error: true
+  # NEW: Post-training monitoring baseline
+  create-monitoring-baseline:
+    runs-on: ubuntu-latest
+    needs: [train-unified-models]
+    if: needs.train-unified-models.result == 'success'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download trained models and data
+        run: |
+          mkdir -p models/best_models data/splits
+          
+          gsutil -m cp gs://${{ env.GCP_BUCKET }}/models/best_models/*.pkl models/best_models/
+          gsutil -m cp gs://${{ env.GCP_BUCKET }}/data/splits/*.csv data/splits/
+      
+      - name: Create monitoring baseline
+        run: |
+          echo "📊 Creating monitoring baseline..."
+          
+          python src/monitoring/model_monitor.py \
+            --models-dir models/best_models \
+            --reference-data data/splits/train_data.csv \
+            --logs-dir logs/monitoring
+          
+          echo "✅ Baseline created"
+      
+      - name: Upload baseline to GCS
+        run: |
+          gsutil cp logs/monitoring/monitoring_report_latest.json \
+            gs://${{ env.GCP_BUCKET }}/logs/monitoring/baseline.json
+          
+          echo "✅ Monitoring baseline uploaded"
 
   pipeline-summary:
     runs-on: ubuntu-latest
-    needs: [run-tests, prepare-data, train-unified-models]
+    needs: [run-tests, prepare-data, train-unified-models, monitor-models]
     if: always()
     
     steps:
@@ -808,55 +962,35 @@ jobs:
           echo "Pipeline Status:"
           echo "  Tests:              ${{ needs.run-tests.result }}"
           echo "  Data Preparation:   ${{ needs.prepare-data.result }}"
+          echo "  Model Monitoring:   ${{ needs.monitor-models.result }}"
           echo "  Unified Training:   ${{ needs.train-unified-models.result }}"
           echo ""
-          echo "Target Variables Trained:"
+          echo "Target Variables:"
           echo "  1. revenue"
           echo "  2. eps"
           echo "  3. debt_equity"
           echo "  4. profit_margin"
           echo "  5. stock_return"
           echo ""
-          echo "Models Trained per Target:"
-          echo "  - XGBoost (baseline)"
-          echo "  - XGBoost (hyperparameter tuned)"
-          echo "  - LightGBM (baseline)"
-          echo "  - LightGBM (hyperparameter tuned)"
-          echo ""
-          echo "Automatic Selection:"
-          echo "  ✅ Best model selected based on Test R² and generalization"
-          echo "  ✅ Saved as {target}_best.pkl"
+          echo "Monitoring Features:"
+          echo "  ✅ Performance decay detection"
+          echo "  ✅ Data drift analysis"
+          echo "  ✅ Automated retraining triggers"
+          echo "  ✅ Daily monitoring schedule"
           echo ""
           if [ "${{ needs.train-unified-models.result }}" == "success" ]; then
             echo "✅ PIPELINE COMPLETED SUCCESSFULLY!"
             echo ""
-            echo "Best models stored in GCS bucket: mlops-financial-stress-data"
+            echo "📊 Monitoring Dashboard:"
+            echo "   View logs at: gs://mlops-financial-stress-data/logs/monitoring/"
             echo ""
-            echo "GCS Structure:"
-            echo "  - gs://mlops-financial-stress-data/data/splits/"
-            echo "  - gs://mlops-financial-stress-data/models/best_models/"
-            echo "      ├── revenue_best.pkl"
-            echo "      ├── eps_best.pkl"
-            echo "      ├── debt_equity_best.pkl"
-            echo "      ├── profit_margin_best.pkl"
-            echo "      ├── stock_return_best.pkl"
-            echo "      ├── model_comparison_report.json"
-            echo "      └── MODEL_SELECTION_SUMMARY.md"
-            echo ""
-            echo "📊 Each .pkl file contains:"
-            echo "   - Trained model (best among 4 variants)"
-            echo "   - Feature names"
-            echo "   - Train/Val/Test metrics"
-            echo "   - Selection reasoning"
-            echo "   - Hyperparameters (if tuned model)"
-            echo ""
-            echo "💡 Usage Example:"
-            echo "   import joblib"
-            echo "   model_data = joblib.load('revenue_best.pkl')"
-            echo "   model = model_data['model']"
-            echo "   predictions = model.predict(X_new)"
+            echo "🔍 Next Steps:"
+            echo "   1. Review monitoring reports"
+            echo "   2. Check for performance alerts"
+            echo "   3. Monitor data drift trends"
           else
             echo "⚠️  Pipeline had issues - check logs for details"
           fi
           echo ""
           echo "════════════════════════════════════════════════════════════════"
+  
