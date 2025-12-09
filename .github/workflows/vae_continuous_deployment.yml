@@ -5,8 +5,12 @@ on:
     branches:
       - main
     paths:
-      - "src/models/**"
-      - "requirements.txt"
+        - "src/models/Dense_VAE_optimized_mlflow_updated.py"
+        - "src/models/Ensemble_VAE_updated.py"
+        - "src/models/model_validation.py"
+        - "src/models/bias_detection.py"
+        - "src/models/model_selection.py"
+        - "requirements.txt"
   workflow_dispatch:
 
 env:
@@ -44,7 +48,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install pandas numpy matplotlib seaborn scipy python-dotenv
       
       - name: Download VAE training data from GCS
         run: |
@@ -222,10 +226,16 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
       
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+      
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install pandas numpy matplotlib seaborn scipy python-dotenv
       
       - name: Download trained models
         uses: actions/download-artifact@v4
@@ -302,10 +312,16 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
       
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+      
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install pandas numpy matplotlib seaborn scipy python-dotenv
       
       - name: Download trained models
         uses: actions/download-artifact@v4
@@ -380,6 +396,15 @@ jobs:
       
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          df -h
       
       - name: Install dependencies
         run: |
