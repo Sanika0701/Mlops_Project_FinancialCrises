@@ -412,8 +412,10 @@ jobs:
       - name: Upload bias results to GCS
         run: |
           echo "📤 Uploading bias detection results to GCS..."
-          gcloud config set project ${{ env.GCP_PROJECT }}
           
+          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+          gcloud config set project ${{ env.GCP_PROJECT }}
+
           if [ -d "outputs/bias_detection" ]; then
             gsutil -m cp -r outputs/bias_detection/* gs://${{ env.GCP_BUCKET }}/outputs/vae/bias_detection/
             echo "✅ Bias results uploaded"
@@ -478,20 +480,54 @@ jobs:
           
           # Move validation results
           if [ -d "vae-validation-results" ]; then
-            cp -r vae-validation-results outputs/validation/
+            mkdir -p outputs/validation
+            cp -r vae-validation-results/* outputs/validation/
             echo "✅ Moved validation results"
           fi
           
           # Move bias results
           if [ -d "vae-bias-results" ]; then
-            cp -r vae-bias-results outputs/bias_detection/
+            mkdir -p outputs/bias_detection
+            cp -r vae-bias-results/* outputs/bias_detection/
             echo "✅ Moved bias results"
           fi
           
-          # Verify structure
+          # Verify structure - check for validation reports
+          echo ""
+          echo "Checking for validation reports:"
+          if [ -f "outputs/output_Dense_VAE_optimized/validation_report.txt" ]; then
+            echo "✅ Dense VAE validation_report.txt found"
+          else
+            echo "⚠️ Dense VAE validation_report.txt not found"
+          fi
+          
+          if [ -f "outputs/output_Ensemble_VAE/ensemble_validation.txt" ]; then
+            echo "✅ Ensemble VAE ensemble_validation.txt found"
+          else
+            echo "⚠️ Ensemble VAE ensemble_validation.txt not found"
+          fi
+          
+          # Check for model pkl files
+          echo ""
+          echo "Checking for model pkl files:"
+          if [ -f "outputs/output_Dense_VAE_optimized/Dense_VAE_optimized.pkl" ]; then
+            echo "✅ Dense VAE pkl found"
+            ls -lh outputs/output_Dense_VAE_optimized/Dense_VAE_optimized.pkl
+          else
+            echo "⚠️ Dense VAE pkl not found"
+          fi
+          
+          if [ -f "outputs/output_Ensemble_VAE/Ensemble_VAE.pkl" ]; then
+            echo "✅ Ensemble VAE pkl found"
+            ls -lh outputs/output_Ensemble_VAE/Ensemble_VAE.pkl
+          else
+            echo "⚠️ Ensemble VAE pkl not found"
+          fi
+          
+          # Show final structure
           echo ""
           echo "Final structure:"
-          ls -R outputs/ | head -20
+          ls -R outputs/ | head -30
       
       - name: Run Model Selection
         id: selection
@@ -508,6 +544,30 @@ jobs:
             python -c "import json; best = json.load(open('outputs/model_selection/model_selection.json')); print(f\"\\nModel: {best['selected_model']}\\nKS Pass Rate: {best['metrics']['ks_pass_rate']:.1f}%\\nCorrelation MAE: {best['metrics']['correlation_mae']:.4f}\")"
           else
             echo "❌ Model selection results not found"
+            exit 1
+          fi
+      
+      - name: Verify deployment to GCS
+        run: |
+          echo "🔍 Verifying model deployment to GCS..."
+          gcloud config set project ${{ env.GCP_PROJECT }}
+          
+          # Check if deployment files exist
+          if gsutil ls gs://${{ env.GCP_BUCKET }}/models/vae/deployment/best_model_deployment.pkl; then
+            echo "✅ best_model_deployment.pkl found in GCS"
+            gsutil ls -lh gs://${{ env.GCP_BUCKET }}/models/vae/deployment/best_model_deployment.pkl
+          else
+            echo "❌ best_model_deployment.pkl not found in GCS"
+            exit 1
+          fi
+          
+          if gsutil ls gs://${{ env.GCP_BUCKET }}/models/vae/deployment/deployment_metadata.json; then
+            echo "✅ deployment_metadata.json found in GCS"
+            echo ""
+            echo "Deployment metadata:"
+            gsutil cat gs://${{ env.GCP_BUCKET }}/models/vae/deployment/deployment_metadata.json
+          else
+            echo "❌ deployment_metadata.json not found in GCS"
             exit 1
           fi
       
