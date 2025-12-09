@@ -143,7 +143,18 @@ jobs:
               with open('models/vae/vae_production.pkl', 'rb') as f:
                   vae_data = pickle.load(f)
               
-              vae_model = vae_data.get('model') if isinstance(vae_data, dict) else vae_data
+              # Handle different pickle formats
+              if isinstance(vae_data, dict):
+                  vae_model = vae_data.get('model')
+                  if vae_model is None:
+                      # Try alternative keys
+                      vae_model = vae_data.get('vae_model') or vae_data.get('best_model')
+              else:
+                  vae_model = vae_data
+              
+              if vae_model is None:
+                  raise ValueError("Could not extract VAE model from pickle file")
+              
               print("✅ VAE production model loaded")
               
               # Load training data (macro features)
@@ -154,13 +165,20 @@ jobs:
               # Sample normal data for reconstruction test
               sample = numeric_data.sample(min(500, len(numeric_data)), random_state=42)
               
-              # Test reconstruction
-              encoder = vae_model.get_layer('encoder')
-              decoder = vae_model.get_layer('decoder')
-              
-              encoded = encoder.predict(sample.values, verbose=0)
-              z_mean = encoded[0] if isinstance(encoded, list) else encoded
-              reconstructed = decoder.predict(z_mean, verbose=0)
+              # Test reconstruction - handle different model architectures
+              if hasattr(vae_model, 'get_layer'):
+                  # Keras model with named layers
+                  encoder = vae_model.get_layer('encoder')
+                  decoder = vae_model.get_layer('decoder')
+                  
+                  encoded = encoder.predict(sample.values, verbose=0)
+                  z_mean = encoded[0] if isinstance(encoded, list) else encoded
+                  reconstructed = decoder.predict(z_mean, verbose=0)
+              elif hasattr(vae_model, 'predict'):
+                  # Standard Keras model with predict method
+                  reconstructed = vae_model.predict(sample.values, verbose=0)
+              else:
+                  raise ValueError("VAE model doesn't have expected methods")
               
               # Calculate KS statistics
               ks_stats = []
@@ -191,7 +209,7 @@ jobs:
               print(f"   Status: {'⚠️ DRIFT DETECTED' if vae_drift else '✅ Healthy'}")
               
               drift_report['models']['vae'] = {
-                  'drift_detected': vae_drift,
+                  'drift_detected': bool(vae_drift),
                   'avg_ks': float(avg_ks),
                   'pass_rate': float(pass_rate),
                   'failed_features': failed_features,
@@ -223,18 +241,28 @@ jobs:
               baseline_data = quarterly_data.iloc[:split_idx]
               current_data = quarterly_data.iloc[split_idx:]
               
-              # Extract features (drop targets)
-              target_cols = [c for c in quarterly_data.columns if c.startswith('target_') or c in ['Revenue', 'EPS', 'Debt_Equity', 'Profit_Margin', 'Stock_Return']]
-              baseline_features = baseline_data.drop(columns=[c for c in target_cols if c in baseline_data.columns], errors='ignore')
-              current_features = current_data.drop(columns=[c for c in target_cols if c in current_data.columns], errors='ignore')
+              # Extract features (drop targets AND non-numeric columns)
+              target_cols = [c for c in quarterly_data.columns if c.startswith('target_') 
+                           or c in ['Revenue', 'EPS', 'Debt_Equity', 'Profit_Margin', 'Stock_Return']]
+              
+              # Also drop non-numeric columns like Company, Sector, Date
+              non_numeric_cols = ['Company', 'Sector', 'Date', 'Ticker', 'Industry']
+              cols_to_drop = list(set(target_cols + non_numeric_cols))
+              
+              baseline_features = baseline_data.drop(columns=[c for c in cols_to_drop if c in baseline_data.columns], errors='ignore')
+              current_features = current_data.drop(columns=[c for c in cols_to_drop if c in current_data.columns], errors='ignore')
+              
+              # Keep only numeric columns
+              baseline_features = baseline_features.select_dtypes(include=[np.number])
+              current_features = current_features.select_dtypes(include=[np.number])
               
               # Check feature distribution shifts
               feature_ks_stats = []
               shifted_features = []
               
-              print(f"\nChecking {baseline_features.select_dtypes(include=[np.number]).shape[1]} numeric features...")
+              print(f"\nChecking {len(baseline_features.columns)} numeric features...")
               
-              for col in baseline_features.select_dtypes(include=[np.number]).columns[:20]:  # Check first 20 features
+              for col in baseline_features.columns[:20]:  # Check first 20 features
                   if col in current_features.columns:
                       baseline_vals = baseline_features[col].dropna()
                       current_vals = current_features[col].dropna()
@@ -261,7 +289,7 @@ jobs:
                   print(f"   Shifted features: {', '.join(shifted_features[:5])}")
               
               drift_report['models']['predictive'] = {
-                  'drift_detected': predictive_drift,
+                  'drift_detected': bool(predictive_drift),
                   'avg_feature_ks': float(avg_feature_ks),
                   'shift_rate': float(shift_rate),
                   'shifted_features': shifted_features[:10],
@@ -292,8 +320,13 @@ jobs:
               split_idx = int(len(labeled_data) * 0.8)
               val_data = labeled_data.iloc[split_idx:]
               
-              feature_cols = [c for c in val_data.columns if c not in ['AT_RISK', 'Date', 'Company', 'Sector', 'Year', 'Quarter']]
-              X_val = val_data[feature_cols].fillna(0).values
+              # Remove non-numeric columns FIRST
+              non_numeric_cols = ['AT_RISK', 'Date', 'Company', 'Sector', 'Year', 'Quarter', 'Ticker', 'Industry']
+              feature_cols = [c for c in val_data.columns if c not in non_numeric_cols]
+              
+              # Keep only numeric features
+              numeric_features = val_data[feature_cols].select_dtypes(include=[np.number])
+              X_val = numeric_features.fillna(0).values
               y_val = val_data['AT_RISK'].values
               
               print(f"✅ Validation data: {len(X_val)} samples, {y_val.sum()} at-risk")
@@ -301,7 +334,16 @@ jobs:
               # Load production anomaly model
               with open('models/anomaly_detection/model.pkl', 'rb') as f:
                   model_data = joblib.load(f)
-              anomaly_model = model_data.get('model') if isinstance(model_data, dict) else model_data
+              
+              if isinstance(model_data, dict):
+                  anomaly_model = model_data.get('model')
+                  if anomaly_model is None:
+                      anomaly_model = model_data.get('anomaly_model') or model_data.get('best_model')
+              else:
+                  anomaly_model = model_data
+              
+              if anomaly_model is None:
+                  raise ValueError("Could not extract anomaly model from pickle file")
               
               print("✅ Anomaly model loaded")
               
@@ -327,7 +369,7 @@ jobs:
               print(f"   Status: {'⚠️ DRIFT DETECTED' if anomaly_drift else '✅ Healthy'}")
               
               drift_report['models']['anomaly'] = {
-                  'drift_detected': anomaly_drift,
+                  'drift_detected': bool(anomaly_drift),
                   'current_roc_auc': float(current_roc),
                   'baseline_roc_auc': float(baseline_roc),
                   'roc_drop_pct': float(roc_drop_pct),
@@ -353,11 +395,16 @@ jobs:
           pred_drift_bool = drift_report['models'].get('predictive', {}).get('drift_detected', False)
           anom_drift_bool = drift_report['models'].get('anomaly', {}).get('drift_detected', False)
           
+          # Convert numpy bools to Python bools
+          vae_drift_bool = bool(vae_drift_bool)
+          pred_drift_bool = bool(pred_drift_bool)
+          anom_drift_bool = bool(anom_drift_bool)
+          
           print(f"VAE Model:        {'⚠️ DRIFT DETECTED' if vae_drift_bool else '✅ Healthy'} (KS={avg_ks:.4f})")
           print(f"Predictive:       {'⚠️ DRIFT DETECTED' if pred_drift_bool else '✅ Healthy'} (FeatureKS={avg_feature_ks:.4f})")
           print(f"Anomaly:          {'⚠️ DRIFT DETECTED' if anom_drift_bool else '✅ Healthy'} (ROC-AUC={current_roc:.4f})")
           
-          any_drift = vae_drift_bool or pred_drift_bool or anom_drift_bool
+          any_drift = bool(vae_drift_bool or pred_drift_bool or anom_drift_bool)
           
           if any_drift:
               models_needing_retrain = []
@@ -520,12 +567,13 @@ jobs:
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
-          server_port: 465
+          server_port: 587
+          secure: true
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           subject: "🚨 Model Drift Detected - Auto-Retraining Started"
           to: ${{ env.NOTIFICATION_EMAIL }}
-          from: MLOps Financial Stress <${{ env.NOTIFICATION_EMAIL }}>
+          from: MLOps Financial Stress <${{ secrets.EMAIL_USERNAME }}>
           body: |
             🚨 MODEL DRIFT ALERT
             
