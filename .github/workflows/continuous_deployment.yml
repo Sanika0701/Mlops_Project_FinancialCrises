@@ -45,7 +45,6 @@ jobs:
           fi
         continue-on-error: true
 
-  # NEW JOB: Download and prepare data from GCP
   prepare-data:
     runs-on: ubuntu-latest
     needs: [run-tests]
@@ -57,7 +56,6 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       
-      # Authenticate with GCP
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -77,16 +75,12 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
       
-      # Download data from GCP
       - name: Download data from GCS
         run: |
           echo "📥 Downloading data from GCS..."
           mkdir -p data/processed data/features data/splits
           
-          # Download the features_engineered.csv
           gsutil cp gs://${{ env.GCP_BUCKET }}/data/processed/features_engineered.csv data/processed/ || echo "File not found"
-          
-          # Try to download pre-existing splits (if they exist)
           gsutil -m cp gs://${{ env.GCP_BUCKET }}/data/splits/*.csv data/splits/ || echo "Splits not found, will generate"
           
           echo "✅ Download complete"
@@ -111,21 +105,13 @@ jobs:
           if [ ! -f "data/splits/train_data.csv" ]; then
             echo "📊 Generating data splits..."
             
-            # Step 1: Create targets
             python src/models/create_target.py
-
-            # Step 2: Drop unused columns
             python src/preprocessing/drop_features.py
-
-            # Step 3: Create temporal splits
             python src/preprocessing/temporal_split.py
-            
-            # Step 4: Handle outliers
             python src/preprocessing/handle_outliers_after_split.py
             
             echo "✅ Splits generated"
             
-            # Upload splits back to GCS
             echo "📤 Uploading splits to GCS..."
             gsutil -m cp data/splits/*.csv gs://${{ env.GCP_BUCKET }}/data/splits/
             gsutil cp data/features/quarterly_data_with_targets.csv gs://${{ env.GCP_BUCKET }}/data/features/
@@ -144,7 +130,6 @@ jobs:
           retention-days: 7
         continue-on-error: true
 
-  # MODIFIED JOB: Train model using downloaded data
   train-model:
     runs-on: ubuntu-latest
     needs: [run-tests, prepare-data]
@@ -167,7 +152,6 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
       
-      # Download the artifact from previous job
       - name: Download data splits
         uses: actions/download-artifact@v4
         with:
@@ -209,7 +193,6 @@ jobs:
           fi
         continue-on-error: true
       
-      # Upload trained model back to GCS
       - name: Upload model to GCS
         if: steps.check_data.outputs.data_exists == 'true'
         uses: google-github-actions/auth@v2
@@ -236,26 +219,130 @@ jobs:
           retention-days: 30
         continue-on-error: true
 
+  # ==========================================================================
+  # MODEL 3: ANOMALY DETECTION COMPLETE PIPELINE (NEW)
+  # ==========================================================================
+  train-model3-anomaly:
+    runs-on: ubuntu-latest
+    needs: [run-tests, prepare-data]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download feature data
+        run: |
+          mkdir -p data/processed
+          gsutil cp gs://${{ env.GCP_BUCKET }}/data/processed/features_engineered.csv data/processed/
+          echo "✅ Data downloaded"
+      
+      - name: Enable GCS for all configs
+        run: |
+          sed -i 's/source_type: "local"/source_type: "gcs"/' configs/eda_config.yaml
+          sed -i 's/source_type: "local"/source_type: "gcs"/' configs/model_config.yaml
+          sed -i 's/upload_to_gcs: false/upload_to_gcs: true/' configs/eda_config.yaml
+          sed -i 's/upload_to_gcs: false/upload_to_gcs: true/' configs/model_config.yaml
+      
+      - name: Run EDA
+        run: |
+          echo "📊 Step 1: EDA with threshold extraction..."
+          mkdir -p outputs/eda/{plots,data,reports}
+          python src/eda/eda.py
+          echo "✅ EDA complete"
+        continue-on-error: true
+      
+      - name: Extract thresholds
+        run: |
+          echo "🔢 Step 2: Threshold extraction..."
+          python src/labeling/auto_threshold_extractor.py
+          [ -f "outputs/snorkel/data/extracted_thresholds.json" ] && cat outputs/snorkel/data/extracted_thresholds.json
+        continue-on-error: true
+      
+      - name: Run Snorkel labeling
+        run: |
+          echo "🏷️  Step 3: Snorkel labeling..."
+          mkdir -p data/labeled outputs/snorkel/{data,plots,reports}
+          python src/labeling/snorkel_pipeline.py
+          
+          if [ -f "outputs/snorkel/data/snorkel_labeled_only.csv" ]; then
+            python -c "import pandas as pd; df=pd.read_csv('outputs/snorkel/data/snorkel_labeled_only.csv'); print(f'Labeled: {len(df):,}, At-risk: {df[\"AT_RISK\"].sum():,} ({df[\"AT_RISK\"].sum()/len(df):.2%})')"
+          fi
+        continue-on-error: true
+      
+      - name: Train anomaly models
+        run: |
+          echo "🤖 Step 4: Training anomaly detection models..."
+          mkdir -p models/{anomaly_detection,Ensemble} outputs/models/{plots,reports,results}
+          python src/models/train_anomaly_detection.py
+        continue-on-error: true
+      
+      - name: Display Model 3 results
+        run: |
+          echo "================================================================"
+          echo "MODEL 3 RESULTS"
+          echo "================================================================"
+          [ -f "models/Ensemble/ensemble_weights.json" ] && cat models/Ensemble/ensemble_weights.json
+          [ -f "outputs/models/results/ensemble_comparison.csv" ] && cat outputs/models/results/ensemble_comparison.csv
+        continue-on-error: true
+      
+      - name: Upload Model 3 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: model3-complete
+          path: |
+            models/anomaly_detection/
+            models/Ensemble/
+            outputs/models/
+            outputs/snorkel/data/snorkel_labeled_only.csv
+          retention-days: 30
+        continue-on-error: true
+
   pipeline-summary:
     runs-on: ubuntu-latest
-    needs: [run-tests, prepare-data, train-model]
+    needs: [run-tests, prepare-data, train-model, train-model3-anomaly]
     if: always()
     
     steps:
       - name: Display summary
         run: |
-          echo "=================================="
-          echo "SIMPLE CI/CD PIPELINE SUMMARY"
-          echo "=================================="
+          echo "================================================================"
+          echo "COMPLETE CI/CD PIPELINE SUMMARY"
+          echo "================================================================"
           echo ""
-          echo "Tests: ${{ needs.run-tests.result }}"
-          echo "Data Preparation: ${{ needs.prepare-data.result }}"
-          echo "Model Training: ${{ needs.train-model.result }}"
+          echo "Pipeline Results:"
+          echo "  Tests:              ${{ needs.run-tests.result }}"
+          echo "  Data Preparation:   ${{ needs.prepare-data.result }}"
+          echo "  Model 2 (XGBoost):  ${{ needs.train-model.result }}"
+          echo "  Model 3 (Anomaly):  ${{ needs.train-model3-anomaly.result }}"
           echo ""
-          if [ "${{ needs.train-model.result }}" == "success" ]; then
-            echo "✅ Pipeline completed successfully!"
+          if [ "${{ needs.train-model.result }}" == "success" ] && [ "${{ needs.train-model3-anomaly.result }}" == "success" ]; then
+            echo "✅ ALL PIPELINES COMPLETED SUCCESSFULLY!"
             echo ""
-            echo "Model and data stored in GCS bucket: mlops-financial-stress-data"
-          else
-            echo "⚠️  Check logs for details"
-          fi
+            echo "GCS Storage: gs://mlops-financial-stress-data/"
+            echo "  ├── models/xgboost/         (Model 2)"
+            echo "  ├── models/model3/          (Model 3 - Anomaly Detection)"
+            echo "  ├── outputs/snorkel/        (Labeled data)"
+            echo "  └── outputs/model3/         (Reports & analysis)"
+          
