@@ -108,10 +108,19 @@ jobs:
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-minimal-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-minimal-
+            ${{ runner.os }}-pip-
+      
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install pandas numpy matplotlib seaborn scipy scikit-learn python-dotenv
       
       - name: Download training data
         uses: actions/download-artifact@v4
@@ -258,7 +267,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: vae-trained-models
-          path: outputs
+          path: .  # Download to current directory
+      
+      - name: Verify downloaded structure
+        run: |
+          echo "📂 Checking downloaded artifact structure..."
+          ls -la
+          if [ -d "outputs" ]; then
+            echo "✅ outputs/ directory exists"
+            ls -R outputs/ | head -30
+          else
+            echo "❌ outputs/ directory not found"
+            echo "Creating outputs structure..."
+            mkdir -p outputs
+          fi
       
       - name: Download training data
         uses: actions/download-artifact@v4
@@ -328,9 +350,6 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
       
       - name: Free disk space
         run: |
@@ -341,7 +360,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pandas numpy matplotlib seaborn scipy scikit-learn python-dotenv
+          pip install pandas numpy matplotlib seaborn scipy python-dotenv
       
       - name: Download trained models
         uses: actions/download-artifact@v4
@@ -380,20 +399,16 @@ jobs:
             cat outputs/bias_detection/bias_detection_report.txt
           fi
       
-
       - name: Upload bias results to GCS
         run: |
           echo "📤 Uploading bias detection results to GCS..."
-          
-          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
           gcloud config set project ${{ env.GCP_PROJECT }}
-
+          
           if [ -d "outputs/bias_detection" ]; then
             gsutil -m cp -r outputs/bias_detection/* gs://${{ env.GCP_BUCKET }}/outputs/vae/bias_detection/
             echo "✅ Bias results uploaded"
           fi
         continue-on-error: true
-
       
       - name: Upload bias detection results as artifact
         uses: actions/upload-artifact@v4
