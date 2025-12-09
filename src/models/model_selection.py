@@ -153,7 +153,8 @@ def upload_model_to_gcs(model_name, metrics):
         
         # Load PyTorch model package
         import torch
-        model_data = torch.load(model_path, map_location='cpu')
+        # Set weights_only=False because our .pth file contains StandardScaler (not just weights)
+        model_data = torch.load(model_path, map_location='cpu', weights_only=False)
         
         print("✓ Model loaded successfully")
         print(f"  Model type: {model_name}")
