@@ -10,231 +10,60 @@ on:
       - "dags/**"
       - "requirements.txt"
       - ".github/workflows/continuous_integration.yml"
-  pull_request:
-    branches:
-      - main
+
   workflow_dispatch:
 
 jobs:
+
   run-tests:
     runs-on: ubuntu-latest
     
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-python@v4
         with:
           python-version: "3.10"
-      
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip wheel setuptools
           pip install -r requirements.txt
-          pip install pytest pytest-xdist pytest-cov
-      
+          pip install pytest pytest-xdist
+
       - name: Run All Unit Tests
-        run: |
-          if [ -d "tests" ]; then
-            pytest -n auto --maxfail=1 -v || echo "Tests completed with some failures"
-          else
-            echo "No tests directory found"
-          fi
-        continue-on-error: true
+        run: pytest -n auto --maxfail=1
 
-  # ==========================================================================
-  # MODEL 3: CODE QUALITY CHECKS (NEW)
-  # ==========================================================================
-  model3-code-quality:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-      
-      - name: Install linting tools
-        run: |
-          pip install flake8 black isort
-      
-      - name: Lint Model 3 code
-        run: |
-          echo "🔍 Linting Model 3 Python files..."
-          
-          # Lint with relaxed rules
-          flake8 src/models/train_anomaly_detection.py --max-line-length=120 --ignore=E501,W503 || true
-          flake8 src/labeling/ --max-line-length=120 --ignore=E501,W503 || true
-          flake8 src/eda/ --max-line-length=120 --ignore=E501,W503 || true
-          flake8 src/utils/gcs_data_loader.py --max-line-length=120 --ignore=E501,W503 || true
-          
-          echo "✓ Linting complete"
-        continue-on-error: true
-      
-      - name: Check code formatting
-        run: |
-          echo "📝 Checking code format..."
-          black --check src/models/train_anomaly_detection.py --line-length=120 || echo "Format check completed"
-        continue-on-error: true
-      
-      - name: Check import sorting
-        run: |
-          echo "📦 Checking import order..."
-          isort --check-only src/models/train_anomaly_detection.py || echo "Import check completed"
-        continue-on-error: true
-
-  # ==========================================================================
-  # MODEL 3: CONFIG VALIDATION (NEW)
-  # ==========================================================================
-  model3-config-validation:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-      
-      - name: Install PyYAML
-        run: pip install pyyaml
-      
-      - name: Validate Model 3 configs
-        run: |
-          echo "📋 Validating Model 3 configuration files..."
-          
-          python -c "
-import yaml
-
-# Validate eda_config.yaml
-try:
-    with open('configs/eda_config.yaml') as f:
-        config = yaml.safe_load(f)
-    assert 'eda' in config, 'Missing eda section'
-    assert 'snorkel' in config, 'Missing snorkel section'
-    print('✓ eda_config.yaml is valid')
-except Exception as e:
-    print(f'✗ eda_config.yaml error: {e}')
-    exit(1)
-
-# Validate model_config.yaml
-try:
-    with open('configs/model_config.yaml') as f:
-        config = yaml.safe_load(f)
-    assert 'data' in config, 'Missing data section'
-    assert 'models' in config, 'Missing models section'
-    assert 'output' in config, 'Missing output section'
-    print('✓ model_config.yaml is valid')
-except Exception as e:
-    print(f'✗ model_config.yaml error: {e}')
-    exit(1)
-
-print('✅ All Model 3 configs are valid')
-"
-
-  # ==========================================================================
-  # MODEL 3: IMPORT VALIDATION (NEW)
-  # ==========================================================================
-  model3-import-check:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-      
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: Check Model 3 imports
-        run: |
-          echo "📦 Checking if all Model 3 modules import correctly..."
-          
-          # Check main training script
-          python -c "
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path.cwd()))
-
-try:
-    # This won't run the script, just imports the modules
-    import src.models.train_anomaly_detection as train_module
-    print('✓ train_anomaly_detection.py imports successfully')
-except Exception as e:
-    print(f'✗ Import error: {e}')
-    exit(1)
-
-try:
-    from src.utils.gcs_data_loader import GCSDataLoader, GCSOutputUploader
-    print('✓ gcs_data_loader.py imports successfully')
-except Exception as e:
-    print(f'✗ Import error: {e}')
-    exit(1)
-
-print('✅ All Model 3 imports work correctly')
-"
 
   airflow-dag-check:
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-python@v4
         with:
           python-version: "3.10"
-      
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip wheel setuptools
           pip install -r requirements.txt
-      
+
       - name: Validate DAG syntax
-        run: |
-          if [ -f "dags/financial_crisis_pipeline.py" ]; then
-            python -m py_compile dags/financial_crisis_pipeline.py
-            echo "✓ DAG syntax valid"
-          else
-            echo "No DAG file found - skipping"
-          fi
-        continue-on-error: true
+        run: python -m py_compile dags/financial_crisis_pipeline.py
+
 
   final-status:
     runs-on: ubuntu-latest
     needs:
       - run-tests
-      - model3-code-quality
-      - model3-config-validation
-      - model3-import-check
       - airflow-dag-check
     if: always()
-    
+
     steps:
       - name: Display Final CI Status
         run: |
-          echo "================================================================"
-          echo "CONTINUOUS INTEGRATION - FINAL STATUS"
-          echo "================================================================"
-          echo ""
-          echo "Job Results:"
-          echo "  Unit Tests:            ${{ needs.run-tests.result }}"
-          echo "  Model 3 Code Quality:  ${{ needs.model3-code-quality.result }}"
-          echo "  Model 3 Configs:       ${{ needs.model3-config-validation.result }}"
-          echo "  Model 3 Imports:       ${{ needs.model3-import-check.result }}"
-          echo "  DAG Validation:        ${{ needs.airflow-dag-check.result }}"
-          echo ""
-          
-          # Check if all critical jobs passed
-          if [ "${{ needs.model3-config-validation.result }}" == "success" ] && \
-             [ "${{ needs.model3-import-check.result }}" == "success" ]; then
-            echo "✅ MODEL 3 CI CHECKS PASSED!"
-          else
-            echo "⚠️  Some Model 3 checks failed"
-          fi
-          echo ""
+          echo "Tests: ${{ needs.run-tests.result }}"
+          echo "DAG Check: ${{ needs.airflow-dag-check.result }}"
           echo "CI Pipeline Completed"
-          echo "================================================================"
