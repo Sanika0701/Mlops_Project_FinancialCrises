@@ -2,14 +2,22 @@
 Model Selection Script
 Compares Dense VAE Optimized vs Ensemble VAE
 Selects best model based on KS Pass Rate and Correlation MAE
+Uploads best model to GCS for deployment
 """
 
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import json
+import pickle
 from pathlib import Path
 import mlflow
+import gcsfs
+from datetime import datetime
+
+# GCS Configuration
+GCS_BUCKET = 'mlops-financial-stress-data'
+GCS_DEPLOYMENT_PATH = f'gs://{GCS_BUCKET}/models/vae/deployment/'
 
 # ============================================
 # 1. LOAD RESULTS FROM BOTH MODELS
@@ -31,10 +39,9 @@ def load_model_results():
     # Read Dense VAE results
     if (dense_vae_dir / 'validation_report.txt').exists():
         print("✓ Found Dense VAE Optimized results")
-        results['Dense_VAE_Optimized'] = {}  # Initialize the dictionary first!
+        results['Dense_VAE_Optimized'] = {}
         with open(dense_vae_dir / 'validation_report.txt', 'r') as f:
             content = f.read()
-            # Parse metrics (simple text parsing)
             for line in content.split('\n'):
                 if 'KS Test Pass Rate:' in line or 'KS Pass Rate:' in line:
                     ks_rate = float(line.split(':')[1].strip().replace('%', ''))
@@ -45,11 +52,14 @@ def load_model_results():
                 elif 'Wasserstein' in line:
                     wass = float(line.split(':')[1].strip())
                     results['Dense_VAE_Optimized']['wasserstein'] = wass
+        
+        # Store model path
+        results['Dense_VAE_Optimized']['model_path'] = dense_vae_dir / 'Dense_VAE_optimized.pkl'
     
     # Read Ensemble VAE results
     if (ensemble_vae_dir / 'ensemble_validation.txt').exists():
         print("✓ Found Ensemble VAE results")
-        results['Ensemble_VAE'] = {}  # Initialize the dictionary first!
+        results['Ensemble_VAE'] = {}
         with open(ensemble_vae_dir / 'ensemble_validation.txt', 'r') as f:
             content = f.read()
             for line in content.split('\n'):
@@ -62,6 +72,9 @@ def load_model_results():
                 elif 'Wasserstein' in line:
                     wass = float(line.split(':')[1].strip())
                     results['Ensemble_VAE']['wasserstein'] = wass
+        
+        # Store model path
+        results['Ensemble_VAE']['model_path'] = ensemble_vae_dir / 'Ensemble_VAE.pkl'
     
     return results
 
@@ -117,7 +130,107 @@ def select_best_model(results):
 
 
 # ============================================
-# 3. VISUALIZE COMPARISON
+# 3. UPLOAD MODEL TO GCS FOR DEPLOYMENT
+# ============================================
+
+def upload_model_to_gcs(model_name, metrics):
+    """
+    Upload the best model to GCS deployment location
+    Creates deployment-ready pkl file with model, scaler, and metadata
+    """
+    
+    print("\n" + "="*60)
+    print("UPLOADING MODEL TO GCS FOR DEPLOYMENT")
+    print("="*60 + "\n")
+    
+    try:
+        # Load the trained model pkl file
+        model_path = metrics['model_path']
+        print(f"Loading model from: {model_path}")
+        
+        with open(model_path, 'rb') as f:
+            model_data = pickle.load(f)
+        
+        print("✓ Model loaded successfully")
+        
+        # Prepare deployment package
+        deployment_package = {
+            'model': model_data.get('model'),
+            'scaler': model_data.get('scaler'),
+            'feature_names': model_data.get('feature_names'),
+            'model_name': model_name,
+            'training_date': datetime.now().isoformat(),
+            'performance_metrics': {
+                'ks_pass_rate': metrics['ks_pass_rate'],
+                'correlation_mae': metrics['correlation_mae'],
+                'wasserstein_distance': metrics.get('wasserstein', 0)
+            },
+            'version': 'v1.0',
+            'deployment_ready': True
+        }
+        
+        # Initialize GCS filesystem
+        fs = gcsfs.GCSFileSystem()
+        
+        # Upload model pkl file
+        deployment_pkl_path = f"{GCS_DEPLOYMENT_PATH}best_model_deployment.pkl"
+        print(f"\nUploading to: {deployment_pkl_path}")
+        
+        with fs.open(deployment_pkl_path, 'wb') as f:
+            pickle.dump(deployment_package, f)
+        
+        print("✓ Model uploaded successfully")
+        
+        # Create and upload deployment metadata JSON
+        metadata = {
+            'model_name': model_name,
+            'deployment_timestamp': datetime.now().isoformat(),
+            'gcs_path': deployment_pkl_path,
+            'performance_metrics': {
+                'ks_pass_rate': f"{metrics['ks_pass_rate']:.2f}%",
+                'correlation_mae': f"{metrics['correlation_mae']:.4f}",
+                'wasserstein_distance': f"{metrics.get('wasserstein', 0):.2f}"
+            },
+            'model_components': {
+                'has_model': deployment_package['model'] is not None,
+                'has_scaler': deployment_package['scaler'] is not None,
+                'feature_count': len(deployment_package['feature_names']) if deployment_package['feature_names'] else 0
+            },
+            'version': 'v1.0',
+            'deployment_status': 'ready'
+        }
+        
+        metadata_path = f"{GCS_DEPLOYMENT_PATH}deployment_metadata.json"
+        print(f"Uploading metadata to: {metadata_path}")
+        
+        with fs.open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        print("✓ Metadata uploaded successfully")
+        
+        print("\n" + "="*60)
+        print("DEPLOYMENT SUMMARY")
+        print("="*60)
+        print(f"Model: {model_name}")
+        print(f"Location: {deployment_pkl_path}")
+        print(f"Size: {len(pickle.dumps(deployment_package)) / 1024:.2f} KB")
+        print(f"Components:")
+        print(f"  - VAE Model: ✓")
+        print(f"  - Scaler: ✓")
+        print(f"  - Feature Names: {len(deployment_package['feature_names'])} features")
+        print(f"  - Metadata: ✓")
+        print("="*60 + "\n")
+        
+        return True
+        
+    except Exception as e:
+        print(f"\n❌ Error uploading model to GCS: {str(e)}")
+        print("Deployment failed - model will not be available for production use")
+        return False
+
+
+# ============================================
+# 4. VISUALIZE COMPARISON
 # ============================================
 
 def create_comparison_plots(results, output_dir='outputs/model_selection'):
@@ -166,7 +279,7 @@ def create_comparison_plots(results, output_dir='outputs/model_selection'):
 
 
 # ============================================
-# 4. SAVE SELECTION REPORT
+# 5. SAVE SELECTION REPORT
 # ============================================
 
 def save_selection_report(best_model, metrics, output_dir='outputs/model_selection'):
@@ -177,7 +290,7 @@ def save_selection_report(best_model, metrics, output_dir='outputs/model_selecti
     
     report_path = f'{output_dir}/model_selection_report.txt'
     
-    with open(report_path, 'w', encoding='utf-8') as f:  # Add encoding='utf-8'
+    with open(report_path, 'w', encoding='utf-8') as f:
         f.write("="*60 + "\n")
         f.write("MODEL SELECTION REPORT\n")
         f.write("Financial Stress Test Scenario Generator\n")
@@ -224,7 +337,10 @@ def save_selection_report(best_model, metrics, output_dir='outputs/model_selecti
         f.write("="*60 + "\n\n")
         f.write(f"The {best_model} is recommended for production deployment.\n")
         f.write("This model provides the best balance of statistical validity\n")
-        f.write("and scenario diversity for financial stress testing.\n")
+        f.write("and scenario diversity for financial stress testing.\n\n")
+        
+        f.write("Deployment Location:\n")
+        f.write(f"GCS Path: {GCS_DEPLOYMENT_PATH}best_model_deployment.pkl\n")
     
     print(f"✓ Saved selection report: {report_path}")
     
@@ -234,14 +350,15 @@ def save_selection_report(best_model, metrics, output_dir='outputs/model_selecti
         json.dump({
             'selected_model': best_model,
             'metrics': metrics,
-            'timestamp': pd.Timestamp.now().isoformat()
+            'timestamp': pd.Timestamp.now().isoformat(),
+            'deployment_path': f"{GCS_DEPLOYMENT_PATH}best_model_deployment.pkl"
         }, f, indent=2)
     
     print(f"✓ Saved selection JSON: {json_path}\n")
 
 
 # ============================================
-# 5. MAIN EXECUTION
+# 6. MAIN EXECUTION
 # ============================================
 
 def main():
@@ -266,15 +383,30 @@ def main():
     # Save report
     save_selection_report(best_model, best_metrics)
     
+    # Upload to GCS for deployment
+    upload_success = upload_model_to_gcs(best_model, best_metrics)
+    
     print("\n" + "="*60)
     print("✅ MODEL SELECTION COMPLETE")
     print("="*60)
     print(f"\nBest Model: {best_model}")
     print(f"Results saved in: outputs/model_selection/")
+    
+    if upload_success:
+        print(f"\n🚀 Model deployed to GCS:")
+        print(f"   {GCS_DEPLOYMENT_PATH}best_model_deployment.pkl")
+        print(f"   Ready for production use!")
+    else:
+        print(f"\n⚠️  Model deployment failed - check logs above")
+    
     print("\nNext steps:")
     print("1. Review model_comparison.png")
     print("2. Read model_selection_report.txt")
-    print("3. Proceed with model validation and bias checks")
+    if upload_success:
+        print("3. Test deployment with inference API")
+        print("4. Set up monitoring for production model")
+    else:
+        print("3. Fix deployment issues and re-run")
     print("="*60 + "\n")
 
 
