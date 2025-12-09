@@ -380,22 +380,11 @@ jobs:
             cat outputs/bias_detection/bias_detection_report.txt
           fi
       
-      #- name: Upload bias results to GCS
-       # run: |
-        #  echo "📤 Uploading bias detection results to GCS..."
-         # gcloud config set project ${{ env.GCP_PROJECT }}
-          
-         # if [ -d "outputs/bias_detection" ]; then
-          #  gsutil -m cp -r outputs/bias_detection/* gs://${{ env.GCP_BUCKET }}/outputs/vae/bias_detection/
-           # echo "✅ Bias results uploaded"
-         # fi
-        #continue-on-error: true
 
       - name: Upload bias results to GCS
         run: |
           echo "📤 Uploading bias detection results to GCS..."
           
-          # ⭐ REQUIRED FIX — activates credentials for gsutil
           gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
           gcloud config set project ${{ env.GCP_PROJECT }}
 
