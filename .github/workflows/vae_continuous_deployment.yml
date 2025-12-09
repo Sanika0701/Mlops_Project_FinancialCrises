@@ -120,7 +120,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install - requirements.txt
       
       - name: Download training data
         uses: actions/download-artifact@v4
@@ -269,18 +269,28 @@ jobs:
           name: vae-trained-models
           path: .  # Download to current directory
       
-      - name: Verify downloaded structure
+      - name: Move artifacts to correct location
         run: |
-          echo "📂 Checking downloaded artifact structure..."
-          ls -la
-          if [ -d "outputs" ]; then
-            echo "✅ outputs/ directory exists"
-            ls -R outputs/ | head -30
-          else
-            echo "❌ outputs/ directory not found"
-            echo "Creating outputs structure..."
-            mkdir -p outputs
+          echo "📂 Organizing artifacts..."
+          
+          # Create outputs directory
+          mkdir -p outputs
+          
+          # Move the downloaded directories
+          if [ -d "output_Dense_VAE_optimized" ]; then
+            mv output_Dense_VAE_optimized outputs/
+            echo "✅ Moved output_Dense_VAE_optimized to outputs/"
           fi
+          
+          if [ -d "output_Ensemble_VAE" ]; then
+            mv output_Ensemble_VAE outputs/
+            echo "✅ Moved output_Ensemble_VAE to outputs/"
+          fi
+          
+          # Verify final structure
+          echo ""
+          echo "Final structure:"
+          ls -R outputs/ | head -30
       
       - name: Download training data
         uses: actions/download-artifact@v4
