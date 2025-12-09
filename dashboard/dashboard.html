@@ -12,7 +12,7 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
@@ -22,146 +22,90 @@
             max-width: 1400px;
             margin: 0 auto;
             background: white;
-            border-radius: 15px;
+            border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             overflow: hidden;
         }
 
-        /* Header */
         .header {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px;
             color: white;
-            padding: 25px 40px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            text-align: center;
         }
 
         .header h1 {
-            font-size: 28px;
-            display: flex;
-            align-items: center;
-            gap: 15px;
+            font-size: 36px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
         }
 
-        .header .user-info {
-            display: flex;
-            align-items: center;
-            gap: 15px;
+        .header p {
+            font-size: 18px;
+            opacity: 0.9;
         }
 
-        .logout-btn {
-            background: rgba(255,255,255,0.2);
-            border: 1px solid rgba(255,255,255,0.4);
-            color: white;
-            padding: 8px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .logout-btn:hover {
-            background: rgba(255,255,255,0.3);
-        }
-
-        /* Navigation Tabs */
-        .nav-tabs {
+        .tabs {
             display: flex;
             background: #f8f9fa;
-            border-bottom: 2px solid #dee2e6;
+            border-bottom: 2px solid #e0e0e0;
+            overflow-x: auto;
         }
 
-        .nav-tab {
-            flex: 1;
-            padding: 20px;
-            text-align: center;
-            cursor: pointer;
+        .tab-button {
+            padding: 20px 30px;
+            background: none;
             border: none;
-            background: transparent;
+            cursor: pointer;
             font-size: 16px;
-            font-weight: 600;
-            color: #495057;
+            font-weight: 500;
+            color: #666;
             transition: all 0.3s;
-            position: relative;
+            border-bottom: 3px solid transparent;
+            white-space: nowrap;
         }
 
-        .nav-tab:hover {
-            background: #e9ecef;
-        }
-
-        .nav-tab.active {
+        .tab-button:hover {
+            background: rgba(102, 126, 234, 0.1);
             color: #667eea;
+        }
+
+        .tab-button.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
             background: white;
-        }
-
-        .nav-tab.active::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: #667eea;
-        }
-
-        /* Content Area */
-        .content {
-            padding: 40px;
         }
 
         .tab-content {
             display: none;
+            padding: 40px;
+            min-height: 500px;
         }
 
         .tab-content.active {
             display: block;
-            animation: fadeIn 0.5s;
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Card Components */
-        .card {
-            background: white;
-            border: 1px solid #dee2e6;
-            border-radius: 10px;
-            padding: 25px;
-            margin-bottom: 25px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-
-        .card-title {
-            font-size: 22px;
-            font-weight: 700;
-            margin-bottom: 20px;
-            color: #2c3e50;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        /* Form Elements */
         .form-group {
             margin-bottom: 20px;
         }
 
         .form-label {
             display: block;
-            font-weight: 600;
             margin-bottom: 8px;
-            color: #495057;
+            font-weight: 600;
+            color: #333;
+            font-size: 15px;
         }
 
         .form-control {
             width: 100%;
             padding: 12px 15px;
-            border: 2px solid #dee2e6;
+            border: 2px solid #e0e0e0;
             border-radius: 8px;
-            font-size: 15px;
-            transition: all 0.3s;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            background: white;
         }
 
         .form-control:focus {
@@ -170,237 +114,134 @@
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
-        /* Buttons */
         .btn {
-            padding: 12px 30px;
+            padding: 15px 30px;
             border: none;
             border-radius: 8px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
+            display: inline-block;
         }
 
         .btn-primary {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
         }
 
-        .btn-secondary {
-            background: #6c757d;
-            color: white;
+        .btn-primary:active {
+            transform: translateY(0);
         }
 
-        .btn-secondary:hover {
-            background: #5a6268;
+        .scenario-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
         }
 
-        .btn-success {
-            background: #28a745;
-            color: white;
-        }
-
-        .btn-download {
-            background: #17a2b8;
-            color: white;
-        }
-
-        /* Risk Gauge */
-        .risk-gauge {
-            text-align: center;
-            margin: 30px 0;
-        }
-
-        .risk-score {
-            font-size: 48px;
-            font-weight: 700;
-            margin: 20px 0;
-        }
-
-        .risk-low { color: #28a745; }
-        .risk-moderate { color: #ffc107; }
-        .risk-high { color: #dc3545; }
-
-        .gauge-bar {
-            width: 100%;
-            height: 40px;
-            background: linear-gradient(to right, #28a745 0%, #ffc107 50%, #dc3545 100%);
-            border-radius: 20px;
+        .scenario-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
             position: relative;
-            margin: 20px 0;
         }
 
-        .gauge-indicator {
+        .scenario-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            border-color: #667eea;
+        }
+
+        .scenario-card.selected {
+            background: linear-gradient(135deg, #34a853 0%, #0f9d58 100%);
+            color: white;
+            border-color: #34a853;
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(52, 168, 83, 0.4);
+        }
+
+        .scenario-card.selected::after {
+            content: '✓';
             position: absolute;
-            top: -10px;
-            width: 4px;
-            height: 60px;
-            background: #2c3e50;
-            transition: left 0.5s;
+            top: 10px;
+            right: 10px;
+            background: white;
+            color: #34a853;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
         }
 
-        .gauge-labels {
+        .scenario-header {
             display: flex;
             justify-content: space-between;
-            font-size: 14px;
-            color: #6c757d;
-            margin-top: 10px;
-        }
-
-        /* Results Table */
-        .results-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-
-        .results-table th {
-            background: #f8f9fa;
-            padding: 15px;
-            text-align: left;
-            font-weight: 600;
-            border-bottom: 2px solid #dee2e6;
-        }
-
-        .results-table td {
-            padding: 15px;
-            border-bottom: 1px solid #dee2e6;
-        }
-
-        .results-table tr:hover {
-            background: #f8f9fa;
-        }
-
-        .metric-change {
-            display: inline-flex;
             align-items: center;
-            gap: 5px;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-weight: 600;
-            font-size: 14px;
-        }
-
-        .metric-up {
-            background: #fff3cd;
-            color: #856404;
-        }
-
-        .metric-down {
-            background: #f8d7da;
-            color: #721c24;
-        }
-
-        /* SHAP Feature Importance */
-        .shap-feature {
             margin-bottom: 15px;
         }
 
-        .shap-label {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 5px;
-            font-size: 14px;
-        }
-
-        .shap-bar-container {
-            background: #e9ecef;
-            height: 25px;
-            border-radius: 12px;
-            overflow: hidden;
-        }
-
-        .shap-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            border-radius: 12px;
-            transition: width 0.5s;
-            display: flex;
-            align-items: center;
-            padding-left: 10px;
-            color: white;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        /* Alert Box */
-        .alert {
-            padding: 15px 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border-left: 4px solid #28a745;
-        }
-
-        .alert-warning {
-            background: #fff3cd;
-            color: #856404;
-            border-left: 4px solid #ffc107;
-        }
-
-        .alert-danger {
-            background: #f8d7da;
-            color: #721c24;
-            border-left: 4px solid #dc3545;
-        }
-
-        .alert-info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border-left: 4px solid #17a2b8;
-        }
-
-        /* Grid Layout */
-        .grid-3 {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin: 20px 0;
-        }
-
-        .stat-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 25px;
-            border-radius: 10px;
-            text-align: center;
-        }
-
-        .stat-value {
-            font-size: 36px;
+        .severity-badge {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
             font-weight: 700;
-            margin: 10px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .stat-label {
-            font-size: 14px;
-            opacity: 0.9;
+        .severity-badge.baseline {
+            background: rgba(52, 168, 83, 0.2);
+            color: #0f9d58;
         }
 
-        /* Loading Spinner */
+        .severity-badge.adverse {
+            background: rgba(251, 188, 4, 0.2);
+            color: #f9ab00;
+        }
+
+        .severity-badge.severe {
+            background: rgba(234, 67, 53, 0.2);
+            color: #c5221f;
+        }
+
+        .severity-badge.extreme {
+            background: rgba(165, 14, 14, 0.2);
+            color: #a50e0e;
+        }
+
+        .scenario-card.selected .severity-badge {
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+        }
+
         .spinner {
             border: 4px solid #f3f3f3;
             border-top: 4px solid #667eea;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            width: 50px;
+            height: 50px;
             animation: spin 1s linear infinite;
-            margin: 20px auto;
+            margin: 0 auto 20px;
         }
 
         @keyframes spin {
@@ -412,123 +253,70 @@
             display: none !important;
         }
 
-        /* Scenario Cards */
-        .scenario-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .scenario-card {
-            background: #f8f9fa;
-            border: 2px solid #dee2e6;
+        .alert {
+            padding: 15px 20px;
             border-radius: 8px;
-            padding: 15px;
-            cursor: pointer;
-            transition: all 0.3s;
+            margin-bottom: 20px;
+            font-size: 15px;
         }
 
-        .scenario-card:hover {
-            border-color: #667eea;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        .alert-info {
+            background: #e3f2fd;
+            color: #1976d2;
+            border-left: 4px solid #1976d2;
         }
 
-        .scenario-card.selected {
-            border-color: #667eea;
-            background: #e7f0ff;
+        .alert-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-left: 4px solid #2e7d32;
         }
 
-        .scenario-type {
-            font-weight: 700;
-            color: #667eea;
-            margin-bottom: 10px;
+        .alert-warning {
+            background: #fff3e0;
+            color: #e65100;
+            border-left: 4px solid #e65100;
         }
 
-        .scenario-metric {
-            display: flex;
-            justify-content: space-between;
-            font-size: 13px;
-            margin: 5px 0;
-            color: #495057;
-        }
-
-        /* Portfolio Heatmap */
-        .portfolio-heatmap {
+        .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
         }
 
-        .company-risk-box {
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 25px;
+            border-radius: 12px;
+            color: white;
             text-align: center;
-            padding: 20px;
-            border-radius: 10px;
-            border: 2px solid;
-            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
         }
 
-        .company-risk-box:hover {
-            transform: scale(1.05);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-        }
-
-        .risk-box-low {
-            background: #d4edda;
-            border-color: #28a745;
-            color: #155724;
-        }
-
-        .risk-box-moderate {
-            background: #fff3cd;
-            border-color: #ffc107;
-            color: #856404;
-        }
-
-        .risk-box-high {
-            background: #f8d7da;
-            border-color: #dc3545;
-            color: #721c24;
-        }
-
-        .company-name {
-            font-weight: 700;
-            font-size: 16px;
+        .stat-value {
+            font-size: 42px;
+            font-weight: bold;
             margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
         }
 
-        .company-risk-score {
-            font-size: 32px;
-            font-weight: 700;
-            margin: 10px 0;
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
         }
 
-        .company-risk-label {
-            font-size: 12px;
-            text-transform: uppercase;
-            font-weight: 600;
+        .selection-info {
+            background: #e3f2fd;
+            padding: 18px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #1976d2;
+            font-size: 15px;
         }
 
-        /* Responsive */
-        @media (max-width: 768px) {
-            .header {
-                flex-direction: column;
-                gap: 15px;
-            }
-
-            .nav-tabs {
-                flex-direction: column;
-            }
-
-            .content {
-                padding: 20px;
-            }
-
-            .grid-3 {
-                grid-template-columns: 1fr;
-            }
+        .selection-info strong {
+            color: #1976d2;
         }
     </style>
 </head>
@@ -536,724 +324,1192 @@
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <h1>
-                <span>💼</span>
-                Financial Stress Test Generator
-            </h1>
-            <div class="user-info">
-                <span>👤 Demo User</span>
-                <button class="logout-btn">Logout</button>
-            </div>
+            <h1>💼 Financial Stress Test Generator</h1>
+            <p>ML-Powered Scenario Analysis & Risk Assessment</p>
         </div>
 
         <!-- Navigation Tabs -->
-        <div class="nav-tabs">
-            <button class="nav-tab active" onclick="showTab('home')">
-                🏠 Dashboard
-            </button>
-            <button class="nav-tab" onclick="showTab('scenarios')">
-                🎲 Generate Scenarios
-            </button>
-            <button class="nav-tab" onclick="showTab('stress-test')">
-                📈 Stress Test
-            </button>
-            <button class="nav-tab" onclick="showTab('portfolio')">
-                💼 Portfolio Analysis
-            </button>
-            <button class="nav-tab" onclick="showTab('monitoring')">
-                📡 Monitoring
-            </button>
+        <div class="tabs">
+            <button class="tab-button active" data-tab="dashboard">📊 Dashboard</button>
+            <button class="tab-button" data-tab="scenarios">🎲 Generate Scenarios</button>
+            <button class="tab-button" data-tab="stress-test">🔬 Stress Test</button>
+            <button class="tab-button" data-tab="portfolio">💼 Portfolio Analysis</button>
+            <button class="tab-button" data-tab="results">📈 Results</button>
         </div>
 
-        <!-- Content Area -->
-        <div class="content">
+        <!-- Tab 1: Dashboard -->
+        <div id="dashboard" class="tab-content active">
+            <h2 style="color: #667eea; margin-bottom: 30px;">System Overview</h2>
             
-            <!-- Tab 1: Dashboard Home -->
-            <div id="home" class="tab-content active">
-                <h2 style="margin-bottom: 30px;">Welcome to Financial Stress Testing</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-companies">-</div>
+                    <div class="stat-label">Companies Available</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-scenarios">-</div>
+                    <div class="stat-label">Scenarios Generated</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-selected">0</div>
+                    <div class="stat-label">Scenarios Selected</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">3</div>
+                    <div class="stat-label">ML Models Active</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 40px; padding: 30px; background: #f8f9fa; border-radius: 12px;">
+                <h3 style="color: #667eea; margin-bottom: 20px;">🚀 How It Works</h3>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 25px;">
+                    <div style="text-align: center; padding: 20px;">
+                        <div style="font-size: 48px; margin-bottom: 15px;">🎲</div>
+                        <h4 style="margin-bottom: 10px; color: #333;">Model 1: VAE</h4>
+                        <p style="color: #666; font-size: 14px; line-height: 1.6;">Generate realistic economic stress scenarios using Variational Autoencoder</p>
+                    </div>
+                    <div style="text-align: center; padding: 20px;">
+                        <div style="font-size: 48px; margin-bottom: 15px;">📈</div>
+                        <h4 style="margin-bottom: 10px; color: #333;">Model 2: LightGBM</h4>
+                        <p style="color: #666; font-size: 14px; line-height: 1.6;">Predict company performance metrics under stress conditions</p>
+                    </div>
+                    <div style="text-align: center; padding: 20px;">
+                        <div style="font-size: 48px; margin-bottom: 15px;">⚠️</div>
+                        <h4 style="margin-bottom: 10px; color: #333;">Model 3: SVM</h4>
+                        <p style="color: #666; font-size: 14px; line-height: 1.6;">Assess risk with anomaly detection and SHAP explanations</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="apiStatus" class="alert alert-info" style="margin-top: 30px;">
+                <strong>API Status:</strong> <span id="apiStatusText">Checking...</span>
+            </div>
+        </div>
+
+        <!-- Tab 2: Generate Scenarios -->
+        <div id="scenarios" class="tab-content">
+            <h2 style="color: #667eea; margin-bottom: 30px;">🎲 Generate Stress Scenarios</h2>
+            
+            <div class="form-group">
+                <label class="form-label">Number of Scenarios to Generate</label>
+                <select class="form-control" id="numScenarios">
+                    <option value="10">10 scenarios</option>
+                    <option value="20">20 scenarios</option>
+                    <option value="50">50 scenarios</option>
+                    <option value="100">100 scenarios</option>
+                </select>
+            </div>
+
+            <button class="btn btn-primary" onclick="generateScenarios()">
+                🎲 Generate New Scenarios
+            </button>
+
+            <!-- Loading -->
+            <div id="scenarioLoading" class="loading hidden">
+                <div class="spinner"></div>
+                <p style="color: #667eea; font-weight: 500;">Generating scenarios with Model 1 (VAE)...</p>
+            </div>
+
+            <!-- Generated Scenarios -->
+            <div id="scenarioResults" class="hidden">
+                <div class="alert alert-success" style="margin-top: 30px;">
+                    ✅ Successfully generated <span id="scenarioCount">0</span> scenarios
+                </div>
+
+                <div class="selection-info">
+                    <strong>Selected Scenarios:</strong> <span id="selectedCount">0</span> scenarios
+                    <br>
+                    <small style="color: #666;">💡 Click scenario cards below to select/deselect them for testing (selected cards turn green)</small>
+                </div>
+
+                <div id="scenarioGrid" class="scenario-grid"></div>
+            </div>
+        </div>
+
+        <!-- Tab 3: Stress Test -->
+        <div id="stress-test" class="tab-content">
+            <h2 style="color: #667eea; margin-bottom: 30px;">🔬 Run Stress Test</h2>
+
+            <div class="form-group">
+                <label class="form-label">Select Company</label>
+                <select class="form-control" id="companySelect">
+                    <option value="">-- Select Company --</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Select Scenario Mode</label>
+                <select class="form-control" id="scenarioDropdown">
+                    <option value="selected">Use Selected Scenarios from Tab 2</option>
+                </select>
+            </div>
+
+            <div class="alert alert-info">
+                <strong>📊 Testing Mode:</strong> <span id="testingInfo">No scenarios selected</span>
+            </div>
+
+            <button class="btn btn-primary" onclick="runStressTest()">
+                🔬 Run Stress Test
+            </button>
+
+            <!-- Loading -->
+            <div id="stressLoading" class="loading hidden">
+                <div class="spinner"></div>
+                <p style="color: #667eea; font-weight: 500;">Running stress test through Models 2 & 3...</p>
+            </div>
+        </div>
+
+        <!-- Tab 4: Portfolio Analysis -->
+        <div id="portfolio" class="tab-content">
+            <h2 style="color: #667eea; margin-bottom: 30px;">💼 Portfolio Analysis</h2>
+
+            <div class="alert alert-info">
+                <strong>📊 Analyze Multiple Companies:</strong> Test a portfolio of companies simultaneously
+            </div>
+
+            <!-- Portfolio Builder -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 12px; margin-bottom: 25px;">
+                <h3 style="color: #333; margin-bottom: 20px;">Build Your Portfolio</h3>
                 
-                <div class="grid-3">
-                    <div class="stat-card">
-                        <div class="stat-label">Scenarios Generated</div>
-                        <div class="stat-value">147</div>
-                        <div class="stat-label">Last 30 Days</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Predictions Made</div>
-                        <div class="stat-value">1,243</div>
-                        <div class="stat-label">Total</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Model Accuracy</div>
-                        <div class="stat-value">78%</div>
-                        <div class="stat-label">R² Score</div>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">🚀 Quick Start</div>
-                    <p style="margin-bottom: 20px; color: #6c757d;">
-                        Get started with stress testing in three simple steps:
-                    </p>
-                    <ol style="line-height: 2; color: #495057;">
-                        <li><strong>Generate Scenarios:</strong> Create realistic economic stress scenarios using AI</li>
-                        <li><strong>Run Stress Tests:</strong> Test how companies perform under different conditions</li>
-                        <li><strong>Analyze Portfolio:</strong> Evaluate your entire portfolio's risk exposure</li>
-                    </ol>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">📊 Recent Activity</div>
-                    <table class="results-table">
-                        <thead>
-                            <tr>
-                                <th>Timestamp</th>
-                                <th>Action</th>
-                                <th>Company</th>
-                                <th>Result</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>2024-10-18 14:23</td>
-                                <td>Stress Test</td>
-                                <td>Apple Inc.</td>
-                                <td><span class="metric-change metric-up">Low Risk (35)</span></td>
-                            </tr>
-                            <tr>
-                                <td>2024-10-18 14:15</td>
-                                <td>Stress Test</td>
-                                <td>Ford Motor</td>
-                                <td><span class="metric-change metric-down">High Risk (78)</span></td>
-                            </tr>
-                            <tr>
-                                <td>2024-10-18 13:47</td>
-                                <td>Scenario Generation</td>
-                                <td>-</td>
-                                <td><span class="metric-change metric-up">100 scenarios created</span></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Tab 2: Scenario Generator -->
-            <div id="scenarios" class="tab-content">
-                <div class="card">
-                    <div class="card-title">🎲 Scenario Generator</div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Number of Scenarios</label>
-                        <select class="form-control" id="numScenarios">
-                            <option value="10">10 scenarios</option>
-                            <option value="50">50 scenarios</option>
-                            <option value="100" selected>100 scenarios</option>
-                            <option value="200">200 scenarios</option>
+                <div style="display: grid; grid-template-columns: 2fr 1fr auto; gap: 15px; align-items: end;">
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label">Company</label>
+                        <select class="form-control" id="portfolioCompanySelect">
+                            <option value="">-- Select Company to Add --</option>
                         </select>
                     </div>
-
-                    <button class="btn btn-primary" onclick="generateScenarios()">
-                        <span>🎲</span>
-                        Generate Scenarios
+                    
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label">Weight (%)</label>
+                        <input type="number" class="form-control" id="portfolioWeight" 
+                               value="10" min="1" max="100" step="1">
+                    </div>
+                    
+                    <button class="btn btn-primary" onclick="addToPortfolio()" style="height: 48px;">
+                        ➕ Add
                     </button>
-
-                    <div id="scenarioLoading" class="hidden">
-                        <div class="spinner"></div>
-                        <p style="text-align: center; color: #6c757d;">Generating scenarios...</p>
-                    </div>
-
-                    <div id="scenarioResults" class="hidden">
-                        <div class="alert alert-success">
-                            <span>✅</span>
-                            <span>Generated <strong id="scenarioCount">100</strong> scenarios in <strong>2.3</strong> seconds</span>
-                        </div>
-
-                        <h3 style="margin: 30px 0 15px 0;">Sample Scenarios</h3>
-                        
-                        <div class="scenario-grid">
-                            <div class="scenario-card" onclick="selectScenario(this, 1)">
-                                <div class="scenario-type">Scenario #1: Severe Recession</div>
-                                <div class="scenario-metric"><span>GDP:</span><span style="color: #dc3545;">-3.2%</span></div>
-                                <div class="scenario-metric"><span>Inflation:</span><span style="color: #ffc107;">7.1%</span></div>
-                                <div class="scenario-metric"><span>Unemployment:</span><span style="color: #dc3545;">10.2%</span></div>
-                                <div class="scenario-metric"><span>VIX:</span><span style="color: #dc3545;">38</span></div>
-                                <div class="scenario-metric"><span>Oil:</span><span>$95</span></div>
-                                <div class="scenario-metric"><span>S&P 500:</span><span style="color: #dc3545;">-25%</span></div>
-                            </div>
-
-                            <div class="scenario-card" onclick="selectScenario(this, 2)">
-                                <div class="scenario-type">Scenario #2: Mild Growth</div>
-                                <div class="scenario-metric"><span>GDP:</span><span style="color: #28a745;">1.8%</span></div>
-                                <div class="scenario-metric"><span>Inflation:</span><span style="color: #28a745;">2.5%</span></div>
-                                <div class="scenario-metric"><span>Unemployment:</span><span style="color: #28a745;">5.1%</span></div>
-                                <div class="scenario-metric"><span>VIX:</span><span style="color: #28a745;">18</span></div>
-                                <div class="scenario-metric"><span>Oil:</span><span>$68</span></div>
-                                <div class="scenario-metric"><span>S&P 500:</span><span style="color: #28a745;">+12%</span></div>
-                            </div>
-
-                            <div class="scenario-card" onclick="selectScenario(this, 3)">
-                                <div class="scenario-type">Scenario #3: Financial Crisis</div>
-                                <div class="scenario-metric"><span>GDP:</span><span style="color: #dc3545;">-5.1%</span></div>
-                                <div class="scenario-metric"><span>Inflation:</span><span style="color: #28a745;">1.2%</span></div>
-                                <div class="scenario-metric"><span>Unemployment:</span><span style="color: #dc3545;">13.5%</span></div>
-                                <div class="scenario-metric"><span>VIX:</span><span style="color: #dc3545;">52</span></div>
-                                <div class="scenario-metric"><span>Oil:</span><span>$42</span></div>
-                                <div class="scenario-metric"><span>S&P 500:</span><span style="color: #dc3545;">-35%</span></div>
-                            </div>
-
-                            <div class="scenario-card" onclick="selectScenario(this, 4)">
-                                <div class="scenario-type">Scenario #4: Stagflation</div>
-                                <div class="scenario-metric"><span>GDP:</span><span style="color: #dc3545;">-1.5%</span></div>
-                                <div class="scenario-metric"><span>Inflation:</span><span style="color: #dc3545;">8.7%</span></div>
-                                <div class="scenario-metric"><span>Unemployment:</span><span style="color: #ffc107;">8.2%</span></div>
-                                <div class="scenario-metric"><span>VIX:</span><span style="color: #ffc107;">31</span></div>
-                                <div class="scenario-metric"><span>Oil:</span><span>$125</span></div>
-                                <div class="scenario-metric"><span>S&P 500:</span><span style="color: #dc3545;">-18%</span></div>
-                            </div>
-
-                            <div class="scenario-card" onclick="selectScenario(this, 5)">
-                                <div class="scenario-type">Scenario #5: Strong Boom</div>
-                                <div class="scenario-metric"><span>GDP:</span><span style="color: #28a745;">4.2%</span></div>
-                                <div class="scenario-metric"><span>Inflation:</span><span style="color: #28a745;">2.8%</span></div>
-                                <div class="scenario-metric"><span>Unemployment:</span><span style="color: #28a745;">3.5%</span></div>
-                                <div class="scenario-metric"><span>VIX:</span><span style="color: #28a745;">12</span></div>
-                                <div class="scenario-metric"><span>Oil:</span><span>$75</span></div>
-                                <div class="scenario-metric"><span>S&P 500:</span><span style="color: #28a745;">+28%</span></div>
-                            </div>
-
-                            <div class="scenario-card" onclick="selectScenario(this, 6)">
-                                <div class="scenario-type">Scenario #6: Oil Crisis</div>
-                                <div class="scenario-metric"><span>GDP:</span><span style="color: #ffc107;">0.5%</span></div>
-                                <div class="scenario-metric"><span>Inflation:</span><span style="color: #dc3545;">9.2%</span></div>
-                                <div class="scenario-metric"><span>Unemployment:</span><span style="color: #ffc107;">6.8%</span></div>
-                                <div class="scenario-metric"><span>VIX:</span><span style="color: #ffc107;">28</span></div>
-                                <div class="scenario-metric"><span>Oil:</span><span style="color: #dc3545;">$158</span></div>
-                                <div class="scenario-metric"><span>S&P 500:</span><span style="color: #dc3545;">-15%</span></div>
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 30px;">
-                            <button class="btn btn-download">
-                                <span>📥</span>
-                                Download CSV
-                            </button>
-                            <button class="btn btn-secondary" onclick="generateScenarios()">
-                                <span>🔄</span>
-                                Generate More
-                            </button>
-                        </div>
-                    </div>
                 </div>
             </div>
 
-            <!-- Tab 3: Company Stress Test -->
-            <div id="stress-test" class="tab-content">
-                <div class="card">
-                    <div class="card-title">📈 Company Stress Test</div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Select Company</label>
-                        <select class="form-control" id="companySelect">
-                            <option value="AAPL">Apple Inc. (AAPL)</option>
-                            <option value="MSFT">Microsoft Corporation (MSFT)</option>
-                            <option value="F" selected>Ford Motor Company (F)</option>
-                            <option value="JPM">JPMorgan Chase & Co. (JPM)</option>
-                            <option value="XOM">Exxon Mobil Corporation (XOM)</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Select Scenario</label>
-                        <select class="form-control" id="scenarioSelect">
-                            <option value="1" selected>Severe Recession (GDP -3.2%)</option>
-                            <option value="2">Mild Growth (GDP +1.8%)</option>
-                            <option value="3">Financial Crisis (GDP -5.1%)</option>
-                            <option value="4">Stagflation (GDP -1.5%, Inflation 8.7%)</option>
-                            <option value="5">Strong Boom (GDP +4.2%)</option>
-                            <option value="6">Oil Crisis (Oil $158)</option>
-                        </select>
-                    </div>
-
-                    <button class="btn btn-primary" onclick="runStressTest()">
-                        <span>🔍</span>
-                        Run Stress Test
-                    </button>
-
-                    <div id="stressLoading" class="hidden">
-                        <div class="spinner"></div>
-                        <p style="text-align: center; color: #6c757d;">Running stress test...</p>
-                    </div>
-
-                    <div id="stressResults" class="hidden">
-                        <h3 style="margin: 30px 0 20px 0;">🎯 Stress Test Results for Ford Motor Company</h3>
-
-                        <!-- Risk Gauge -->
-                        <div class="risk-gauge">
-                            <div class="alert alert-danger">
-                                <span>⚠️</span>
-                                <span><strong>Risk Score: 78 / 100</strong> (HIGH RISK)</span>
-                            </div>
-                            
-                            <div class="gauge-bar">
-                                <div class="gauge-indicator" style="left: 78%;"></div>
-                            </div>
-                            <div class="gauge-labels">
-                                <span>Low Risk (0)</span>
-                                <span>Moderate (50)</span>
-                                <span>High Risk (100)</span>
-                            </div>
-                        </div>
-
-                        <!-- Predicted Metrics -->
-                        <h4 style="margin: 30px 0 15px 0;">📊 Predicted Metrics (Next Quarter)</h4>
-                        <table class="results-table">
-                            <thead>
-                                <tr>
-                                    <th>Metric</th>
-                                    <th>Current</th>
-                                    <th>Predicted</th>
-                                    <th>Change</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><strong>Revenue</strong></td>
-                                    <td>$34.5B</td>
-                                    <td>$26.2B</td>
-                                    <td><span class="metric-change metric-down">-24% 📉</span></td>
-                                </tr>
-                                <tr>
-                                    <td><strong>EPS</strong></td>
-                                    <td>$0.55</td>
-                                    <td>$0.08</td>
-                                    <td><span class="metric-change metric-down">-85% 📉</span></td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Debt/Equity</strong></td>
-                                    <td>3.8</td>
-                                    <td>4.9</td>
-                                    <td><span class="metric-change metric-up">+29% 📈</span></td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Profit Margin</strong></td>
-                                    <td>4.2%</td>
-                                    <td>0.9%</td>
-                                    <td><span class="metric-change metric-down">-79% 📉</span></td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Stock Price Est.</strong></td>
-                                    <td>$12.50</td>
-                                    <td>$6.80</td>
-                                    <td><span class="metric-change metric-down">-46% 📉</span></td>
-                                </tr>
-                            </tbody>
-                        </table>
-
-                        <!-- SHAP Explanation -->
-                        <h4 style="margin: 30px 0 15px 0;">🔍 Why is Ford at High Risk?</h4>
-                        <div class="card" style="background: #f8f9fa;">
-                            <p style="margin-bottom: 20px; color: #6c757d;">
-                                Top risk factors contributing to the 78-point risk score:
-                            </p>
-                            
-                            <div class="shap-feature">
-                                <div class="shap-label">
-                                    <span><strong>1. High Debt-to-Equity Ratio</strong></span>
-                                    <span>+25 points (32%)</span>
-                                </div>
-                                <div class="shap-bar-container">
-                                    <div class="shap-bar" style="width: 100%;">████████████████</div>
-                                </div>
-                            </div>
-
-                            <div class="shap-feature">
-                                <div class="shap-label">
-                                    <span><strong>2. Severe GDP Decline (-3.2%)</strong></span>
-                                    <span>+18 points (23%)</span>
-                                </div>
-                                <div class="shap-bar-container">
-                                    <div class="shap-bar" style="width: 72%;">██████████</div>
-                                </div>
-                            </div>
-
-                            <div class="shap-feature">
-                                <div class="shap-label">
-                                    <span><strong>3. Rising Unemployment (10.2%)</strong></span>
-                                    <span>+15 points (19%)</span>
-                                </div>
-                                <div class="shap-bar-container">
-                                    <div class="shap-bar" style="width: 60%;">████████</div>
-                                </div>
-                            </div>
-
-                            <div class="shap-feature">
-                                <div class="shap-label">
-                                    <span><strong>4. Declining Profit Margins</strong></span>
-                                    <span>+12 points (15%)</span>
-                                </div>
-                                <div class="shap-bar-container">
-                                    <div class="shap-bar" style="width: 48%;">██████</div>
-                                </div>
-                            </div>
-
-                            <div class="shap-feature">
-                                <div class="shap-label">
-                                    <span><strong>5. Cyclical Auto Sector</strong></span>
-                                    <span>+8 points (11%)</span>
-                                </div>
-                                <div class="shap-bar-container">
-                                    <div class="shap-bar" style="width: 32%;">████</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Historical Context -->
-                        <div class="alert alert-info" style="margin-top: 20px;">
-                            <span>📚</span>
-                            <span>
-                                <strong>Historical Context:</strong> During the 2008 recession (similar conditions), 
-                                Ford's EPS dropped 88% and stock fell 52%. Current prediction aligns with historical performance.
-                            </span>
-                        </div>
-
-                        <!-- Recommendation -->
-                        <div class="alert alert-warning">
-                            <span>💡</span>
-                            <span>
-                                <strong>Recommendation:</strong> Consider reducing exposure to Ford due to high debt 
-                                and cyclical sector vulnerability in recession scenarios.
-                            </span>
-                        </div>
-
-                        <div style="margin-top: 30px;">
-                            <button class="btn btn-secondary" onclick="runStressTest()">
-                                <span>🔄</span>
-                                Test Another Scenario
-                            </button>
-                            <button class="btn btn-download">
-                                <span>📥</span>
-                                Download Report
-                            </button>
-                        </div>
-                    </div>
+            <!-- Current Portfolio -->
+            <div id="currentPortfolio" style="margin-bottom: 25px;">
+                <h3 style="color: #333; margin-bottom: 15px;">Current Portfolio</h3>
+                <div id="portfolioList" style="background: white; border: 2px solid #e0e0e0; border-radius: 8px; padding: 20px; min-height: 100px;">
+                    <p style="text-align: center; color: #999;">No companies added yet</p>
+                </div>
+                <div id="portfolioSummary" style="margin-top: 15px; padding: 15px; background: #e3f2fd; border-radius: 8px; display: none;">
+                    <strong>Total Weight:</strong> <span id="totalWeight">0</span>%
+                    <span id="weightWarning" style="color: #d32f2f; margin-left: 15px; display: none;">
+                        ⚠️ Must equal 100%
+                    </span>
                 </div>
             </div>
 
-            <!-- Tab 4: Portfolio Analysis -->
-            <div id="portfolio" class="tab-content">
-                <div class="card">
-                    <div class="card-title">💼 Portfolio Risk Analysis</div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Upload Portfolio (CSV)</label>
-                        <input type="file" class="form-control" accept=".csv">
-                        <small style="color: #6c757d; display: block; margin-top: 5px;">
-                            Format: Company, Ticker, Allocation (%)
-                        </small>
-                    </div>
-
-                    <div class="alert alert-info">
-                        <span>ℹ️</span>
-                        <span>Using demo portfolio: 5 holdings loaded</span>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Test Against Scenario</label>
-                        <select class="form-control">
-                            <option value="1" selected>Severe Recession (GDP -3.2%)</option>
-                            <option value="2">Mild Growth (GDP +1.8%)</option>
-                            <option value="3">Financial Crisis (GDP -5.1%)</option>
-                            <option value="all">All 100 Scenarios (Average)</option>
-                        </select>
-                    </div>
-
-                    <button class="btn btn-primary" onclick="analyzePortfolio()">
-                        <span>🔍</span>
-                        Analyze Portfolio
-                    </button>
-
-                    <div id="portfolioResults" class="hidden">
-                        <h3 style="margin: 30px 0 20px 0;">📊 Portfolio Health: MODERATE RISK (58/100)</h3>
-
-                        <!-- Risk Heatmap -->
-                        <h4 style="margin: 20px 0 15px 0;">Risk Heatmap</h4>
-                        <div class="portfolio-heatmap">
-                            <div class="company-risk-box risk-box-low">
-                                <div class="company-name">Apple</div>
-                                <div class="company-risk-score">35</div>
-                                <div class="company-risk-label">🟢 Low Risk</div>
-                                <div style="margin-top: 10px; font-size: 14px;">30% allocation</div>
-                            </div>
-
-                            <div class="company-risk-box risk-box-low">
-                                <div class="company-name">Microsoft</div>
-                                <div class="company-risk-score">28</div>
-                                <div class="company-risk-label">🟢 Low Risk</div>
-                                <div style="margin-top: 10px; font-size: 14px;">15% allocation</div>
-                            </div>
-
-                            <div class="company-risk-box risk-box-moderate">
-                                <div class="company-name">JPMorgan</div>
-                                <div class="company-risk-score">62</div>
-                                <div class="company-risk-label">🟡 Moderate</div>
-                                <div style="margin-top: 10px; font-size: 14px;">25% allocation</div>
-                            </div>
-
-                            <div class="company-risk-box risk-box-high">
-                                <div class="company-name">Ford</div>
-                                <div class="company-risk-score">78</div>
-                                <div class="company-risk-label">🔴 High Risk</div>
-                                <div style="margin-top: 10px; font-size: 14px;">20% allocation</div>
-                            </div>
-
-                            <div class="company-risk-box risk-box-moderate">
-                                <div class="company-name">ExxonMobil</div>
-                                <div class="company-risk-score">55</div>
-                                <div class="company-risk-label">🟡 Moderate</div>
-                                <div style="margin-top: 10px; font-size: 14px;">10% allocation</div>
-                            </div>
-                        </div>
-
-                        <!-- Portfolio Performance -->
-                        <h4 style="margin: 30px 0 15px 0;">🎯 Expected Portfolio Performance</h4>
-                        <table class="results-table">
-                            <tr>
-                                <td><strong>Current Portfolio Value</strong></td>
-                                <td style="text-align: right; font-size: 18px;"><strong>$1,000,000</strong></td>
-                            </tr>
-                            <tr>
-                                <td><strong>Stressed Portfolio Value</strong></td>
-                                <td style="text-align: right; font-size: 18px; color: #dc3545;"><strong>$782,000</strong></td>
-                            </tr>
-                            <tr>
-                                <td><strong>Expected Loss</strong></td>
-                                <td style="text-align: right; font-size: 18px; color: #dc3545;"><strong>-21.8%</strong></td>
-                            </tr>
-                            <tr>
-                                <td>Worst Case (95th percentile)</td>
-                                <td style="text-align: right; color: #721c24;">-32.4%</td>
-                            </tr>
-                            <tr>
-                                <td>Best Case (5th percentile)</td>
-                                <td style="text-align: right; color: #155724;">-12.1%</td>
-                            </tr>
-                        </table>
-
-                        <!-- Vulnerabilities -->
-                        <div class="alert alert-warning" style="margin-top: 20px;">
-                            <div>
-                                <strong>⚠️ Key Vulnerabilities:</strong>
-                                <ol style="margin: 10px 0 0 20px;">
-                                    <li>Overweight in Ford (20%) - High cyclical risk</li>
-                                    <li>Financial sector exposure (JPM) vulnerable to credit crises</li>
-                                    <li>Limited defensive holdings (no healthcare/utilities)</li>
-                                </ol>
-                            </div>
-                        </div>
-
-                        <!-- Optimization -->
-                        <div class="card" style="background: #e7f0ff; border: 2px solid #667eea;">
-                            <h4 style="color: #667eea; margin-bottom: 15px;">💡 Optimization Suggestions</h4>
-                            <ul style="line-height: 2; color: #495057;">
-                                <li>✓ Reduce Ford to 10% (-50% position) - Lower cyclical exposure</li>
-                                <li>✓ Increase Apple to 35% - More resilient tech allocation</li>
-                                <li>✓ Add defensive sector exposure (Healthcare/Consumer Staples)</li>
-                                <li>✓ Consider diversification into bonds or alternative assets</li>
-                            </ul>
-                            <div class="alert alert-success" style="margin-top: 15px;">
-                                <span>📈</span>
-                                <span>
-                                    <strong>Rebalanced Portfolio Expected Loss: -15.2%</strong> 
-                                    (vs -21.8% current) - Improvement of 6.6 percentage points
-                                </span>
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 30px;">
-                            <button class="btn btn-success">
-                                <span>♻️</span>
-                                Apply Rebalancing
-                            </button>
-                            <button class="btn btn-secondary">
-                                <span>📊</span>
-                                Test Other Scenarios
-                            </button>
-                            <button class="btn btn-download">
-                                <span>📥</span>
-                                Download Full Report
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            <!-- Scenario Selection -->
+            <div class="form-group">
+                <label class="form-label">Select Scenario</label>
+                <select class="form-control" id="portfolioScenarioSelect">
+                    <option value="selected">Use Selected Scenarios from Tab 2</option>
+                </select>
             </div>
 
-            <!-- Tab 5: Monitoring -->
-            <div id="monitoring" class="tab-content">
-                <div class="card">
-                    <div class="card-title">📡 System Monitoring</div>
-                    
-                    <div class="alert alert-success">
-                        <span>🟢</span>
-                        <span><strong>System Status: Healthy</strong> | Last updated: 2 minutes ago</span>
-                    </div>
+            <button class="btn btn-primary" onclick="analyzePortfolio()">
+                📊 Analyze Portfolio
+            </button>
 
-                    <h4 style="margin: 20px 0 15px 0;">📊 Model Performance (Last 30 Days)</h4>
-                    <table class="results-table">
-                        <thead>
-                            <tr>
-                                <th>Metric</th>
-                                <th>Current</th>
-                                <th>Target</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><strong>Prediction R²</strong></td>
-                                <td>0.78</td>
-                                <td>&gt; 0.75</td>
-                                <td><span class="metric-change metric-up">✓ Pass</span></td>
-                            </tr>
-                            <tr>
-                                <td><strong>Mean Absolute Error (EPS)</strong></td>
-                                <td>$0.42</td>
-                                <td>&lt; $0.50</td>
-                                <td><span class="metric-change metric-up">✓ Pass</span></td>
-                            </tr>
-                            <tr>
-                                <td><strong>Anomaly Detection Precision</strong></td>
-                                <td>82%</td>
-                                <td>&gt; 80%</td>
-                                <td><span class="metric-change metric-up">✓ Pass</span></td>
-                            </tr>
-                            <tr>
-                                <td><strong>API Latency (p95)</strong></td>
-                                <td>1.8s</td>
-                                <td>&lt; 2.0s</td>
-                                <td><span class="metric-change metric-up">✓ Pass</span></td>
-                            </tr>
-                            <tr>
-                                <td><strong>System Uptime</strong></td>
-                                <td>99.6%</td>
-                                <td>&gt; 99.5%</td>
-                                <td><span class="metric-change metric-up">✓ Pass</span></td>
-                            </tr>
-                            <tr>
-                                <td><strong>Error Rate</strong></td>
-                                <td>0.7%</td>
-                                <td>&lt; 1.0%</td>
-                                <td><span class="metric-change metric-up">✓ Pass</span></td>
-                            </tr>
-                        </tbody>
-                    </table>
+            <!-- Loading -->
+            <div id="portfolioLoading" class="loading hidden">
+                <div class="spinner"></div>
+                <p style="color: #667eea; font-weight: 500;">Analyzing portfolio across scenarios...</p>
+            </div>
 
-                    <div class="grid-3" style="margin-top: 30px;">
-                        <div class="card" style="background: #d4edda; border-left: 4px solid #28a745;">
-                            <h4 style="color: #155724;">System Health</h4>
-                            <div style="font-size: 36px; margin: 15px 0; color: #155724;">🟢</div>
-                            <p style="color: #155724;">All systems operational</p>
-                        </div>
+            <!-- Portfolio Results -->
+            <div id="portfolioResults" class="hidden"></div>
+        </div>
 
-                        <div class="card" style="background: #fff3cd; border-left: 4px solid #ffc107;">
-                            <h4 style="color: #856404;">Active Users</h4>
-                            <div style="font-size: 36px; font-weight: 700; margin: 15px 0; color: #856404;">23</div>
-                            <p style="color: #856404;">Currently online</p>
-                        </div>
-
-                        <div class="card" style="background: #d1ecf1; border-left: 4px solid #17a2b8;">
-                            <h4 style="color: #0c5460;">Predictions Today</h4>
-                            <div style="font-size: 36px; font-weight: 700; margin: 15px 0; color: #0c5460;">487</div>
-                            <p style="color: #0c5460;">+12% vs yesterday</p>
-                        </div>
-                    </div>
-
-                    <h4 style="margin: 30px 0 15px 0;">⚡ Recent Alerts</h4>
-                    <div class="alert alert-info">
-                        <span>ℹ️</span>
-                        <span><strong>2024-10-18 08:15</strong> - Model retraining completed successfully (R² improved from 0.76 to 0.78)</span>
-                    </div>
-                    <div class="alert alert-success">
-                        <span>✅</span>
-                        <span><strong>2024-10-17 14:22</strong> - Data validation passed: 0 critical issues found</span>
-                    </div>
+        <!-- Tab 5: Results -->
+        <div id="results" class="tab-content">
+            <h2 style="color: #667eea; margin-bottom: 30px;">📈 Test Results</h2>
+            <div id="stressResults">
+                <div style="text-align: center; padding: 60px; color: #999;">
+                    <div style="font-size: 64px; margin-bottom: 20px;">📊</div>
+                    <p style="font-size: 18px;">No results yet. Run a stress test to see results here.</p>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Tab Switching
-        function showTab(tabId) {
+        // ============================================================================
+        // CONFIGURATION
+        // ============================================================================
+        const API_BASE_URL = 'http://localhost:8000/api/v1';
+        
+        // Global State
+        let generatedScenarios = [];
+        let selectedScenarioIds = [];  // Start EMPTY - no pre-selection!
+        let apiConnected = false;
+        let portfolio = [];  // Portfolio: [{company_id, weight, sector}]
+
+        // ============================================================================
+        // TAB NAVIGATION - FIXED
+        // ============================================================================
+        function showTab(tabName) {
             // Hide all tabs
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
             });
             
-            // Remove active from all nav tabs
-            document.querySelectorAll('.nav-tab').forEach(tab => {
-                tab.classList.remove('active');
+            // Remove active from all buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
             });
             
             // Show selected tab
-            document.getElementById(tabId).classList.add('active');
+            const selectedTab = document.getElementById(tabName);
+            if (selectedTab) {
+                selectedTab.classList.add('active');
+            }
             
-            // Highlight active nav tab
-            event.target.classList.add('active');
+            // Mark correct button as active
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                if (btn.getAttribute('data-tab') === tabName) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            console.log('📍 Switched to tab:', tabName);
         }
 
-        // Scenario Generation
-        function generateScenarios() {
+        // Add click handlers to tab buttons
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const tabName = this.getAttribute('data-tab');
+                    showTab(tabName);
+                });
+            });
+        });
+
+        // ============================================================================
+        // INITIALIZATION
+        // ============================================================================
+        window.onload = async function() {
+            console.log('🎨 Dashboard loaded');
+            console.log('🚀 Initializing Financial Stress Test Dashboard...');
+            
+            try {
+                // Check API health
+                const health = await fetch(`${API_BASE_URL}/health`).then(r => r.json());
+                console.log('✅ API Connected:', health);
+                
+                apiConnected = true;
+                
+                // Update status
+                document.getElementById('apiStatusText').innerHTML = '✅ Connected - All models loaded';
+                document.getElementById('apiStatus').className = 'alert alert-success';
+                
+                // Update stats
+                document.getElementById('stat-companies').textContent = health.n_companies;
+                document.getElementById('stat-scenarios').textContent = health.n_scenarios;
+                
+                // Load data
+                await loadCompanies();
+                await loadInitialScenarios();
+                
+            } catch (error) {
+                console.error('❌ API Connection Failed:', error);
+                
+                apiConnected = false;
+                document.getElementById('apiStatusText').innerHTML = '❌ Not Connected - Please start API server';
+                document.getElementById('apiStatus').className = 'alert alert-warning';
+                
+                alert('⚠️ Cannot connect to API.\n\nPlease ensure the API is running:\n\ncd deployment/api && python main.py');
+            }
+        };
+
+        // ============================================================================
+        // LOAD COMPANIES
+        // ============================================================================
+        async function loadCompanies() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/companies`);
+                const data = await response.json();
+                
+                const select = document.getElementById('companySelect');
+                select.innerHTML = '<option value="">-- Select Company --</option>';
+                
+                // Also populate portfolio dropdown
+                const portfolioSelect = document.getElementById('portfolioCompanySelect');
+                if (portfolioSelect) {
+                    portfolioSelect.innerHTML = '<option value="">-- Select Company to Add --</option>';
+                }
+                
+                data.companies.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.company_id;
+                    opt.textContent = `${c.company_id} (${c.sector})`;
+                    select.appendChild(opt);
+                    
+                    // Also add to portfolio dropdown
+                    if (portfolioSelect) {
+                        const opt2 = opt.cloneNode(true);
+                        portfolioSelect.appendChild(opt2);
+                    }
+                });
+                
+                console.log(`✅ Loaded ${data.companies.length} companies into dropdown`);
+            } catch (error) {
+                console.error('Failed to load companies:', error);
+            }
+        }
+
+        // ============================================================================
+        // LOAD SCENARIOS
+        // ============================================================================
+        async function loadInitialScenarios() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/scenarios`);
+                const data = await response.json();
+                
+                generatedScenarios = data.scenarios;
+                selectedScenarioIds = [];  // Start with NONE selected!
+                
+                populateScenarioDropdown();
+                displayScenarios();
+                updateSelectionInfo();
+                
+                // Show scenario results
+                document.getElementById('scenarioResults').classList.remove('hidden');
+                document.getElementById('scenarioCount').textContent = data.scenarios.length;
+                
+                console.log(`✅ Loaded ${data.scenarios.length} scenarios`);
+            } catch (error) {
+                console.error('Failed to load scenarios:', error);
+            }
+        }
+
+        // ============================================================================
+        // SCENARIO GENERATION
+        // ============================================================================
+        async function generateScenarios() {
             const loading = document.getElementById('scenarioLoading');
             const results = document.getElementById('scenarioResults');
-            const count = document.getElementById('numScenarios').value;
+            const count = parseInt(document.getElementById('numScenarios').value);
             
             loading.classList.remove('hidden');
             results.classList.add('hidden');
             
-            // Simulate API call
-            setTimeout(() => {
+            try {
+                console.log(`🎲 Generating ${count} scenarios...`);
+                
+                const response = await fetch(`${API_BASE_URL}/scenarios/generate`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ n_scenarios: count })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                // Reload scenarios
+                await loadInitialScenarios();
+                
                 loading.classList.add('hidden');
                 results.classList.remove('hidden');
-                document.getElementById('scenarioCount').textContent = count;
-            }, 2000);
+                
+                document.getElementById('stat-scenarios').textContent = count;
+                
+                console.log(`✅ Generated ${count} scenarios`);
+            } catch (error) {
+                loading.classList.add('hidden');
+                alert('❌ Failed to generate scenarios: ' + error.message);
+            }
         }
 
-        // Scenario Selection
-        function selectScenario(element, id) {
-            document.querySelectorAll('.scenario-card').forEach(card => {
-                card.classList.remove('selected');
+        // ============================================================================
+        // DISPLAY SCENARIOS
+        // ============================================================================
+        function displayScenarios() {
+            const grid = document.getElementById('scenarioGrid');
+            grid.innerHTML = '';
+            
+            generatedScenarios.forEach(s => {
+                const isSelected = selectedScenarioIds.includes(s.scenario_id);
+                
+                const card = document.createElement('div');
+                card.className = `scenario-card ${isSelected ? 'selected' : ''}`;
+                card.onclick = () => toggleScenario(s.scenario_id);
+                
+                card.innerHTML = `
+                    <div class="scenario-header">
+                        <span style="font-weight: 600; font-size: 16px;">Scenario ${s.scenario_id}</span>
+                        <span class="severity-badge ${s.severity}">${s.severity}</span>
+                    </div>
+                    <div style="margin-top: 15px; font-size: 14px; line-height: 1.8; color: ${isSelected ? 'white' : '#555'};">
+                        <div><strong>GDP:</strong> $${(s.preview.GDP / 1000).toFixed(1)}T</div>
+                        <div><strong>VIX:</strong> ${s.preview.VIX.toFixed(1)}</div>
+                        <div><strong>Unemployment:</strong> ${s.preview.Unemployment_Rate.toFixed(1)}%</div>
+                    </div>
+                `;
+                
+                grid.appendChild(card);
             });
-            element.classList.add('selected');
         }
 
-        // Stress Test
-        function runStressTest() {
+        function toggleScenario(scenarioId) {
+            const index = selectedScenarioIds.indexOf(scenarioId);
+            
+            if (index > -1) {
+                // Deselect
+                selectedScenarioIds.splice(index, 1);
+                console.log('❌ Deselected scenario:', scenarioId);
+            } else {
+                // Select
+                selectedScenarioIds.push(scenarioId);
+                console.log('✅ Selected scenario:', scenarioId);
+            }
+            
+            displayScenarios();  // Refresh display
+            updateSelectionInfo();
+            populateScenarioDropdown();
+        }
+
+        function updateSelectionInfo() {
+            const count = selectedScenarioIds.length;
+            
+            document.getElementById('selectedCount').textContent = count;
+            document.getElementById('stat-selected').textContent = count;
+            
+            const info = document.getElementById('testingInfo');
+            if (count === 0) {
+                info.innerHTML = '<span style="color: #d32f2f;">⚠️ No scenarios selected - please select from Tab 2</span>';
+            } else if (count === 1) {
+                info.innerHTML = `<span style="color: #1976d2;">Testing 1 scenario: <strong>Scenario ${selectedScenarioIds[0]}</strong></span>`;
+            } else {
+                info.innerHTML = `<span style="color: #1976d2;">Testing ${count} scenarios: <strong>${selectedScenarioIds.join(', ')}</strong></span>`;
+            }
+        }
+
+        function populateScenarioDropdown() {
+            const select = document.getElementById('scenarioDropdown');
+            select.innerHTML = '<option value="selected">Use Selected Scenarios from Tab 2</option>';
+            
+            generatedScenarios.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.scenario_id;
+                opt.textContent = `Scenario ${s.scenario_id}: ${s.severity} (VIX: ${s.preview.VIX.toFixed(1)})`;
+                select.appendChild(opt);
+            });
+        }
+
+        // ============================================================================
+        // STRESS TEST
+        // ============================================================================
+        async function runStressTest() {
             const loading = document.getElementById('stressLoading');
-            const results = document.getElementById('stressResults');
+            const resultsDiv = document.getElementById('stressResults');
+            
+            const companySelect = document.getElementById('companySelect');
+            const scenarioDropdown = document.getElementById('scenarioDropdown');
+            
+            const companyId = companySelect.value;
+            const scenarioMode = scenarioDropdown.value;
+            
+            if (!companyId) {
+                alert('⚠️ Please select a company first');
+                return;
+            }
+            
+            // Determine which scenarios to test
+            let scenarioIds;
+            if (scenarioMode === 'selected') {
+                if (selectedScenarioIds.length === 0) {
+                    alert('⚠️ No scenarios selected.\n\nPlease go to Tab 2 (Generate Scenarios) and click on scenario cards to select them (they will turn green).');
+                    return;
+                }
+                scenarioIds = selectedScenarioIds;
+            } else {
+                scenarioIds = [parseInt(scenarioMode)];
+            }
+            
+            console.log(`🔬 Running stress test: ${companyId} × ${scenarioIds.length} scenarios`);
             
             loading.classList.remove('hidden');
-            results.classList.add('hidden');
+            resultsDiv.innerHTML = '';
             
-            // Simulate API call
-            setTimeout(() => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/stress-test`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        company_id: companyId,
+                        scenario_ids: scenarioIds
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'API request failed');
+                }
+                
+                const data = await response.json();
+                
                 loading.classList.add('hidden');
-                results.classList.remove('hidden');
-            }, 1500);
+                
+                // Display results
+                displayStressTestResults(data);
+                
+                // Switch to results tab
+                showTab('results');
+                
+                console.log('✅ Stress test completed');
+            } catch (error) {
+                loading.classList.add('hidden');
+                alert('❌ Stress test failed: ' + error.message);
+                console.error('Stress test error:', error);
+            }
         }
 
-        // Portfolio Analysis
-        function analyzePortfolio() {
-            const results = document.getElementById('portfolioResults');
-            results.classList.remove('hidden');
-            results.scrollIntoView({ behavior: 'smooth' });
+        // ============================================================================
+        // DISPLAY RESULTS
+        // ============================================================================
+        function displayStressTestResults(data) {
+            const container = document.getElementById('stressResults');
+            
+            if (data.aggregated) {
+                displayAggregatedResults(data, container);
+            } else {
+                displaySingleResult(data.result, container);
+            }
         }
 
-        // Auto-show results on page load for demo
-        window.onload = function() {
-            document.getElementById('scenarioResults').classList.remove('hidden');
-            document.getElementById('stressResults').classList.remove('hidden');
-            document.getElementById('portfolioResults').classList.remove('hidden');
-        };
+        function displaySingleResult(result, container) {
+            const risk = result.risk_assessment;
+            const pred = result.predictions;
+            const scenario = result.scenario;
+
+            let html = `
+                <div style="max-width: 1200px;">
+                    <h2 style="color: #667eea; margin-bottom: 10px;">
+                        📊 Stress Test Results: ${result.company_id}
+                    </h2>
+                    <p style="color: #666; font-size: 18px; margin-bottom: 30px;">
+                        Scenario ${result.scenario_id}: ${scenario.crisis_type} (${scenario.severity.toUpperCase()})
+                    </p>
+
+                    <!-- Model 1: Economic Scenario -->
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                                padding: 25px; border-radius: 12px; color: white; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(102,126,234,0.3);">
+                        <h3 style="margin: 0 0 15px 0; opacity: 0.95;">🌍 Economic Scenario (Model 1: VAE)</h3>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; font-size: 15px;">
+                            <div><strong>GDP:</strong> $${(scenario.macroeconomic_indicators.GDP / 1000).toFixed(1)}T</div>
+                            <div><strong>VIX:</strong> ${scenario.macroeconomic_indicators.VIX.toFixed(1)}</div>
+                            <div><strong>Unemployment:</strong> ${scenario.macroeconomic_indicators.unemployment_pct.toFixed(1)}%</div>
+                            <div><strong>CPI:</strong> ${scenario.macroeconomic_indicators.CPI.toFixed(1)}</div>
+                            <div><strong>Fed Rate:</strong> ${scenario.macroeconomic_indicators.federal_funds_rate.toFixed(2)}%</div>
+                            <div><strong>S&P 500:</strong> ${scenario.macroeconomic_indicators.SP500_close.toFixed(0)}</div>
+                        </div>
+                    </div>
+
+                    <!-- Model 3: Risk Assessment -->
+                    <div style="text-align: center; padding: 40px; 
+                                background: ${risk.risk_score >= 75 ? 'linear-gradient(135deg, #ea4335 0%, #a50e0e 100%)' : 
+                                            risk.risk_score >= 50 ? 'linear-gradient(135deg, #fbbc04 0%, #ea4335 100%)' : 
+                                            risk.risk_score >= 25 ? 'linear-gradient(135deg, #34a853 0%, #fbbc04 100%)' : 
+                                            'linear-gradient(135deg, #34a853 0%, #0f9d58 100%)'};
+                                border-radius: 12px; color: white; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                        <h3 style="margin: 0; opacity: 0.95; font-size: 20px;">MODEL 3: RISK ASSESSMENT (One-Class SVM)</h3>
+                        <div style="font-size: 90px; font-weight: bold; margin: 25px 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.2);">
+                            ${risk.risk_score.toFixed(1)}
+                        </div>
+                        <h2 style="margin: 0; font-size: 32px; letter-spacing: 2px;">${risk.risk_category} RISK</h2>
+                        ${risk.anomaly_detected ? 
+                            '<div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px; margin-top: 20px; font-size: 16px;">⚠️ ANOMALY DETECTED</div>' :
+                            '<div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px; margin-top: 20px; font-size: 16px;">✅ Normal Pattern</div>'
+                        }
+                        <p style="margin-top: 15px; font-size: 15px; opacity: 0.95; font-style: italic; line-height: 1.6;">
+                            "${risk.interpretation}"
+                        </p>
+                        <div style="margin-top: 15px; font-size: 13px; opacity: 0.8;">
+                            Anomaly Score: ${risk.anomaly_score.toFixed(3)} | Model ROC-AUC: ${risk.model_roc_auc}
+                        </div>
+                    </div>
+
+                    <!-- Model 2: Predictions -->
+                    <div style="background: white; padding: 25px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="color: #1a73e8; margin-bottom: 20px;">📈 Predicted Performance (Model 2: LightGBM Ensemble)</h3>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: #f8f9fa; border-bottom: 2px solid #1a73e8;">
+                                    <th style="padding: 15px; text-align: left; font-weight: 600;">Metric</th>
+                                    <th style="padding: 15px; text-align: right; font-weight: 600;">Current</th>
+                                    <th style="padding: 15px; text-align: right; font-weight: 600;">Predicted</th>
+                                    <th style="padding: 15px; text-align: right; font-weight: 600;">Change</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr style="border-bottom: 1px solid #eee;">
+                                    <td style="padding: 15px; font-weight: 500;">💰 Revenue</td>
+                                    <td style="padding: 15px; text-align: right;">$${(pred.current_revenue / 1e9).toFixed(2)}B</td>
+                                    <td style="padding: 15px; text-align: right;">$${(pred.predicted_revenue / 1e9).toFixed(2)}B</td>
+                                    <td style="padding: 15px; text-align: right; font-weight: bold; font-size: 18px;
+                                               color: ${pred.revenue_change_pct < 0 ? '#ea4335' : '#34a853'};">
+                                        ${pred.revenue_change_pct > 0 ? '+' : ''}${pred.revenue_change_pct.toFixed(1)}%
+                                    </td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid #eee; background: #fafafa;">
+                                    <td style="padding: 15px; font-weight: 500;">📊 EPS</td>
+                                    <td style="padding: 15px; text-align: right;">$${pred.current_eps.toFixed(2)}</td>
+                                    <td style="padding: 15px; text-align: right;">$${pred.predicted_eps.toFixed(2)}</td>
+                                    <td style="padding: 15px; text-align: right; font-weight: bold; font-size: 18px;
+                                               color: ${pred.eps_change_pct < 0 ? '#ea4335' : '#34a853'};">
+                                        ${pred.eps_change_pct > 0 ? '+' : ''}${pred.eps_change_pct.toFixed(1)}%
+                                    </td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid #eee;">
+                                    <td style="padding: 15px; font-weight: 500;">⚖️ Debt/Equity</td>
+                                    <td style="padding: 15px; text-align: right;">${pred.current_debt_equity.toFixed(2)}</td>
+                                    <td style="padding: 15px; text-align: right;">${pred.predicted_debt_equity.toFixed(2)}</td>
+                                    <td style="padding: 15px; text-align: right; font-weight: bold; font-size: 18px;
+                                               color: ${pred.debt_change_pct > 0 ? '#ea4335' : '#34a853'};">
+                                        ${pred.debt_change_pct > 0 ? '+' : ''}${pred.debt_change_pct.toFixed(1)}%
+                                    </td>
+                                </tr>
+                                <tr style="background: #fafafa;">
+                                    <td style="padding: 15px; font-weight: 500;">📉 Profit Margin</td>
+                                    <td style="padding: 15px; text-align: right;">${pred.current_profit_margin.toFixed(2)}%</td>
+                                    <td style="padding: 15px; text-align: right;">${pred.predicted_profit_margin.toFixed(2)}%</td>
+                                    <td style="padding: 15px; text-align: right; color: #666;">-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+
+            // SHAP Explanations Section
+            if (risk.shap_explanations && risk.shap_explanations.length > 0) {
+                const shap = risk.shap_explanations.slice(0, 5);
+                
+                html += `
+                    <div style="background: #f8f9fa; padding: 30px; border-radius: 12px; margin-top: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                        <h3 style="color: #1a73e8; margin-bottom: 10px;">🔍 Risk Factor Analysis (SHAP)</h3>
+                        <p style="color: #666; margin-bottom: 25px; font-size: 14px;">
+                            Top factors contributing to the risk score (normalized SHAP values -100 to +100)
+                        </p>
+                        
+                        ${shap.map((s, index) => {
+                            const isPositive = s.impact === 'increases_risk';
+                            const color = isPositive ? '#ea4335' : '#34a853';
+                            const bgColor = isPositive ? '#fce4ec' : '#e8f5e9';
+                            const icon = isPositive ? '🔴' : '🟢';
+                            
+                            return `
+                                <div style="margin: 15px 0; padding: 20px; background: ${bgColor}; 
+                                            border-radius: 10px; border-left: 5px solid ${color};
+                                            box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div style="flex: 1;">
+                                            <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px; color: #333;">
+                                                <span style="display: inline-block; width: 25px;">${index + 1}.</span>
+                                                ${icon} ${s.feature.replace(/_/g, ' ').toUpperCase()}
+                                            </div>
+                                            <div style="color: #666; font-size: 14px; margin-left: 35px;">
+                                                Current Value: <strong>${formatFeatureValue(s.feature, s.feature_value)}</strong>
+                                            </div>
+                                        </div>
+                                        <div style="text-align: right; margin-left: 20px;">
+                                            <div style="font-size: 28px; font-weight: bold; color: ${color};">
+                                                ${s.shap_value > 0 ? '+' : ''}${s.shap_value.toFixed(1)}
+                                            </div>
+                                            <div style="font-size: 13px; color: #666; margin-top: 3px;">
+                                                ${s.contribution}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Progress bar -->
+                                    <div style="margin-top: 12px; background: #ddd; height: 8px; border-radius: 4px; overflow: hidden;">
+                                        <div style="height: 100%; background: ${color}; 
+                                                    width: ${Math.min(Math.abs(s.shap_value), 100)}%; 
+                                                    transition: width 0.5s ease;
+                                                    box-shadow: 0 0 5px ${color};">
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                        
+                        <div style="margin-top: 25px; padding: 15px; background: white; border-radius: 8px; border-left: 4px solid #1a73e8;">
+                            <p style="color: #666; font-size: 13px; line-height: 1.6; margin: 0;">
+                                <strong>💡 How to read SHAP values:</strong> Positive values (🔴) increase risk, negative values (🟢) decrease risk. 
+                                The magnitude shows how much each feature contributes to the final risk score.
+                            </p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function displayAggregatedResults(data, container) {
+            const summary = data.summary;
+            
+            let html = `
+                <div style="max-width: 1200px;">
+                    <h2 style="color: #667eea; margin-bottom: 10px;">
+                        📊 Stress Test Results: ${data.company_id}
+                    </h2>
+                    <p style="color: #666; font-size: 18px; margin-bottom: 30px;">
+                        Tested across ${data.n_scenarios} scenarios
+                    </p>
+
+                    <!-- Average Risk -->
+                    <div style="text-align: center; padding: 45px; 
+                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                border-radius: 12px; color: white; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(102,126,234,0.3);">
+                        <h3 style="margin: 0; opacity: 0.95; font-size: 20px;">AVERAGE RISK SCORE</h3>
+                        <div style="font-size: 85px; font-weight: bold; margin: 25px 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.2);">
+                            ${summary.avg_risk_score.toFixed(1)}
+                        </div>
+                        <p style="font-size: 16px; opacity: 0.9;">Across ${data.n_scenarios} scenarios</p>
+                    </div>
+
+                    <!-- Best/Worst Case -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
+                        <div style="background: #e8f5e9; padding: 35px; border-radius: 12px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                            <h4 style="color: #34a853; margin-bottom: 15px; font-size: 18px;">🟢 BEST CASE SCENARIO</h4>
+                            <div style="font-size: 56px; font-weight: bold; color: #34a853; margin-bottom: 10px;">
+                                ${summary.best_case.risk_assessment.risk_score.toFixed(1)}
+                            </div>
+                            <p style="color: #666; font-size: 15px;">Scenario #${summary.best_case.scenario_id}</p>
+                            <p style="color: #666; font-size: 13px; margin-top: 5px;">${summary.best_case.scenario.crisis_type}</p>
+                        </div>
+                        
+                        <div style="background: #fce4ec; padding: 35px; border-radius: 12px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                            <h4 style="color: #ea4335; margin-bottom: 15px; font-size: 18px;">🔴 WORST CASE SCENARIO</h4>
+                            <div style="font-size: 56px; font-weight: bold; color: #ea4335; margin-bottom: 10px;">
+                                ${summary.worst_case.risk_assessment.risk_score.toFixed(1)}
+                            </div>
+                            <p style="color: #666; font-size: 15px;">Scenario #${summary.worst_case.scenario_id}</p>
+                            <p style="color: #666; font-size: 13px; margin-top: 5px;">${summary.worst_case.scenario.crisis_type}</p>
+                        </div>
+                    </div>
+
+                    <!-- Individual Results -->
+                    <details style="margin-top: 30px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                        <summary style="cursor: pointer; padding: 15px; background: #f8f9fa; border-radius: 8px; font-weight: 600; font-size: 16px; color: #333;">
+                            📋 View All ${data.n_scenarios} Individual Results
+                        </summary>
+                        <div style="margin-top: 20px;">
+                            ${data.detailed_results.map(r => `
+                                <div style="border: 1px solid #e0e0e0; padding: 18px; margin: 12px 0; border-radius: 10px; background: white; transition: all 0.3s;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <strong style="font-size: 16px; color: #333;">Scenario ${r.scenario_id}:</strong> 
+                                            <span style="color: #666;">${r.scenario.crisis_type}</span>
+                                        </div>
+                                        <div style="text-align: right;">
+                                            <div style="color: ${getRiskColor(r.risk_assessment.risk_score)}; font-weight: bold; font-size: 24px;">
+                                                ${r.risk_assessment.risk_score.toFixed(1)}
+                                            </div>
+                                            <div style="font-size: 12px; color: #666;">
+                                                Revenue: ${r.predictions.revenue_change_pct.toFixed(1)}% | 
+                                                EPS: ${r.predictions.eps_change_pct.toFixed(1)}%
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </details>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function formatFeatureValue(feature, value) {
+            // Format feature values for better readability
+            if (feature.includes('Revenue') || feature.includes('Income')) {
+                return '$' + (value / 1e9).toFixed(2) + 'B';
+            } else if (feature.includes('GDP')) {
+                return '$' + (value / 1000).toFixed(1) + 'T';
+            } else if (feature.includes('margin') || feature.includes('ratio') || feature.includes('roa') || feature.includes('roe')) {
+                return value.toFixed(2) + '%';
+            } else {
+                return value.toFixed(2);
+            }
+        }
+
+        function getRiskColor(score) {
+            if (score < 25) return '#34a853';
+            if (score < 50) return '#fbbc04';
+            if (score < 75) return '#ea4335';
+            return '#a50e0e';
+        }
+
+        // ============================================================================
+        // PORTFOLIO ANALYSIS
+        // ============================================================================
+        function addToPortfolio() {
+            const select = document.getElementById('portfolioCompanySelect');
+            const weightInput = document.getElementById('portfolioWeight');
+            
+            const companyId = select.value;
+            const weight = parseFloat(weightInput.value);
+            
+            if (!companyId) {
+                alert('⚠️ Please select a company');
+                return;
+            }
+            
+            if (weight <= 0 || weight > 100) {
+                alert('⚠️ Weight must be between 1 and 100');
+                return;
+            }
+            
+            // Check if already in portfolio
+            if (portfolio.find(p => p.company_id === companyId)) {
+                alert('⚠️ Company already in portfolio');
+                return;
+            }
+            
+            // Get company info
+            const selectedOption = select.options[select.selectedIndex];
+            const fullText = selectedOption.textContent;
+            const sector = fullText.match(/\((.*?)\)/)[1];
+            
+            // Add to portfolio
+            portfolio.push({
+                company_id: companyId,
+                weight: weight,
+                sector: sector
+            });
+            
+            console.log(`✅ Added ${companyId} with weight ${weight}%`);
+            
+            // Reset inputs
+            select.value = '';
+            weightInput.value = 10;
+            
+            // Update display
+            displayPortfolio();
+            updatePortfolioSummary();
+        }
+
+        function removeFromPortfolio(companyId) {
+            portfolio = portfolio.filter(p => p.company_id !== companyId);
+            console.log(`❌ Removed ${companyId} from portfolio`);
+            
+            displayPortfolio();
+            updatePortfolioSummary();
+        }
+
+        function displayPortfolio() {
+            const container = document.getElementById('portfolioList');
+            
+            if (portfolio.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">No companies added yet</p>';
+                document.getElementById('portfolioSummary').style.display = 'none';
+                return;
+            }
+            
+            container.innerHTML = `
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid #e0e0e0;">
+                            <th style="padding: 10px; text-align: left;">Company</th>
+                            <th style="padding: 10px; text-align: left;">Sector</th>
+                            <th style="padding: 10px; text-align: right;">Weight</th>
+                            <th style="padding: 10px; text-align: center;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${portfolio.map(p => `
+                            <tr style="border-bottom: 1px solid #eee;">
+                                <td style="padding: 12px; font-weight: 600;">${p.company_id}</td>
+                                <td style="padding: 12px; color: #666;">${p.sector}</td>
+                                <td style="padding: 12px; text-align: right; font-weight: 600; color: #1a73e8;">
+                                    ${p.weight.toFixed(1)}%
+                                </td>
+                                <td style="padding: 12px; text-align: center;">
+                                    <button onclick="removeFromPortfolio('${p.company_id}')" 
+                                            style="background: #ea4335; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                                        🗑️ Remove
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            document.getElementById('portfolioSummary').style.display = 'block';
+        }
+
+        function updatePortfolioSummary() {
+            const totalWeight = portfolio.reduce((sum, p) => sum + p.weight, 0);
+            
+            document.getElementById('totalWeight').textContent = totalWeight.toFixed(1);
+            
+            const warning = document.getElementById('weightWarning');
+            if (Math.abs(totalWeight - 100) > 0.1) {
+                warning.style.display = 'inline';
+            } else {
+                warning.style.display = 'none';
+            }
+        }
+
+        async function analyzePortfolio() {
+            const loading = document.getElementById('portfolioLoading');
+            const resultsDiv = document.getElementById('portfolioResults');
+            const scenarioDropdown = document.getElementById('portfolioScenarioSelect');
+            
+            if (portfolio.length === 0) {
+                alert('⚠️ Please add companies to your portfolio first');
+                return;
+            }
+            
+            const totalWeight = portfolio.reduce((sum, p) => sum + p.weight, 0);
+            if (Math.abs(totalWeight - 100) > 1) {
+                const proceed = confirm(`⚠️ Portfolio weights sum to ${totalWeight.toFixed(1)}% (should be 100%).\n\nContinue anyway?`);
+                if (!proceed) return;
+            }
+            
+            // Determine scenarios
+            const scenarioMode = scenarioDropdown.value;
+            let scenarioIds;
+            
+            if (scenarioMode === 'selected') {
+                if (selectedScenarioIds.length === 0) {
+                    alert('⚠️ No scenarios selected. Please select scenarios from Tab 2.');
+                    return;
+                }
+                scenarioIds = selectedScenarioIds;
+            } else {
+                scenarioIds = [parseInt(scenarioMode)];
+            }
+            
+            console.log(`💼 Analyzing portfolio: ${portfolio.length} companies × ${scenarioIds.length} scenarios`);
+            
+            loading.classList.remove('hidden');
+            resultsDiv.classList.add('hidden');
+            
+            try {
+                // Run stress test for each company
+                const portfolioResults = [];
+                
+                for (const p of portfolio) {
+                    console.log(`   Testing ${p.company_id} (${p.weight}%)...`);
+                    
+                    const response = await fetch(`${API_BASE_URL}/stress-test`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            company_id: p.company_id,
+                            scenario_ids: scenarioIds
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`Failed for ${p.company_id}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    portfolioResults.push({
+                        company_id: p.company_id,
+                        weight: p.weight,
+                        sector: p.sector,
+                        results: data
+                    });
+                }
+                
+                loading.classList.add('hidden');
+                resultsDiv.classList.remove('hidden');
+                
+                // Display portfolio results
+                displayPortfolioResults(portfolioResults, scenarioIds.length);
+                
+                console.log('✅ Portfolio analysis completed');
+                
+            } catch (error) {
+                loading.classList.add('hidden');
+                alert('❌ Portfolio analysis failed: ' + error.message);
+            }
+        }
+
+        function displayPortfolioResults(portfolioResults, nScenarios) {
+            const container = document.getElementById('portfolioResults');
+            
+            // Calculate portfolio-weighted risk
+            const portfolioRisks = portfolioResults.map(p => {
+                const avgRisk = p.results.aggregated ? 
+                    p.results.summary.avg_risk_score : 
+                    p.results.result.risk_assessment.risk_score;
+                
+                return {
+                    company_id: p.company_id,
+                    weight: p.weight,
+                    sector: p.sector,
+                    avg_risk: avgRisk,
+                    weighted_risk: avgRisk * (p.weight / 100)
+                };
+            });
+            
+            const totalPortfolioRisk = portfolioRisks.reduce((sum, p) => sum + p.weighted_risk, 0);
+            
+            let html = `
+                <div style="max-width: 1200px;">
+                    <h2 style="color: #667eea; margin-bottom: 10px;">💼 Portfolio Analysis Results</h2>
+                    <p style="color: #666; font-size: 16px; margin-bottom: 30px;">
+                        ${portfolio.length} companies tested across ${nScenarios} scenario${nScenarios > 1 ? 's' : ''}
+                    </p>
+
+                    <!-- Portfolio Risk Score -->
+                    <div style="text-align: center; padding: 45px; 
+                                background: ${totalPortfolioRisk >= 75 ? 'linear-gradient(135deg, #ea4335 0%, #a50e0e 100%)' : 
+                                            totalPortfolioRisk >= 50 ? 'linear-gradient(135deg, #fbbc04 0%, #ea4335 100%)' : 
+                                            totalPortfolioRisk >= 25 ? 'linear-gradient(135deg, #34a853 0%, #fbbc04 100%)' : 
+                                            'linear-gradient(135deg, #34a853 0%, #0f9d58 100%)'};
+                                border-radius: 12px; color: white; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                        <h3 style="margin: 0; opacity: 0.95; font-size: 20px;">PORTFOLIO WEIGHTED RISK</h3>
+                        <div style="font-size: 90px; font-weight: bold; margin: 25px 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.2);">
+                            ${totalPortfolioRisk.toFixed(1)}
+                        </div>
+                        <h2 style="margin: 0; font-size: 28px;">${totalPortfolioRisk >= 75 ? 'CRITICAL' : totalPortfolioRisk >= 50 ? 'HIGH' : totalPortfolioRisk >= 25 ? 'MODERATE' : 'LOW'} RISK</h2>
+                    </div>
+
+                    <!-- Individual Company Breakdown -->
+                    <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                        <h3 style="color: #1a73e8; margin-bottom: 20px;">📊 Company Breakdown</h3>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: #f8f9fa; border-bottom: 2px solid #1a73e8;">
+                                    <th style="padding: 12px; text-align: left;">Company</th>
+                                    <th style="padding: 12px; text-align: left;">Sector</th>
+                                    <th style="padding: 12px; text-align: right;">Weight</th>
+                                    <th style="padding: 12px; text-align: right;">Avg Risk</th>
+                                    <th style="padding: 12px; text-align: right;">Contribution</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${portfolioRisks.sort((a, b) => b.weighted_risk - a.weighted_risk).map(p => `
+                                    <tr style="border-bottom: 1px solid #eee;">
+                                        <td style="padding: 12px; font-weight: 600;">${p.company_id}</td>
+                                        <td style="padding: 12px; color: #666;">${p.sector}</td>
+                                        <td style="padding: 12px; text-align: right;">${p.weight.toFixed(1)}%</td>
+                                        <td style="padding: 12px; text-align: right; font-weight: 600; color: ${getRiskColor(p.avg_risk)};">
+                                            ${p.avg_risk.toFixed(1)}
+                                        </td>
+                                        <td style="padding: 12px; text-align: right; font-weight: 600; color: ${getRiskColor(p.weighted_risk * 100 / p.weight)};">
+                                            ${p.weighted_risk.toFixed(1)}
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                                <tr style="background: #f8f9fa; font-weight: bold; border-top: 2px solid #1a73e8;">
+                                    <td colspan="4" style="padding: 15px; text-align: right;">TOTAL PORTFOLIO RISK:</td>
+                                    <td style="padding: 15px; text-align: right; font-size: 18px; color: ${getRiskColor(totalPortfolioRisk)};">
+                                        ${totalPortfolioRisk.toFixed(1)}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Sector Breakdown -->
+                    <div style="background: #f8f9fa; padding: 25px; border-radius: 12px; margin-top: 25px;">
+                        <h3 style="color: #333; margin-bottom: 20px;">📂 Sector Exposure</h3>
+                        ${getSectorBreakdown(portfolioRisks)}
+                    </div>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+
+        function getSectorBreakdown(portfolioRisks) {
+            // Group by sector
+            const sectors = {};
+            
+            portfolioRisks.forEach(p => {
+                if (!sectors[p.sector]) {
+                    sectors[p.sector] = {
+                        total_weight: 0,
+                        weighted_risk: 0,
+                        companies: []
+                    };
+                }
+                
+                sectors[p.sector].total_weight += p.weight;
+                sectors[p.sector].weighted_risk += p.weighted_risk;
+                sectors[p.sector].companies.push(p.company_id);
+            });
+            
+            let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">';
+            
+            for (const [sector, data] of Object.entries(sectors)) {
+                const avgRisk = data.weighted_risk / data.total_weight * 100;
+                
+                html += `
+                    <div style="background: white; padding: 20px; border-radius: 8px; border-left: 4px solid ${getRiskColor(avgRisk)};">
+                        <h4 style="color: #333; margin-bottom: 10px; font-size: 15px;">${sector}</h4>
+                        <div style="font-size: 28px; font-weight: bold; color: ${getRiskColor(avgRisk)}; margin-bottom: 5px;">
+                            ${avgRisk.toFixed(1)}
+                        </div>
+                        <div style="color: #666; font-size: 13px;">
+                            Weight: ${data.total_weight.toFixed(1)}% | 
+                            ${data.companies.length} ${data.companies.length === 1 ? 'company' : 'companies'}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            return html;
+        }
+
+        // Update scenario dropdown for portfolio
+        async function loadInitialScenarios() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/scenarios`);
+                const data = await response.json();
+                
+                generatedScenarios = data.scenarios;
+                selectedScenarioIds = [];  // Start with NONE selected!
+                
+                populateScenarioDropdown();
+                populatePortfolioScenarioDropdown();  // Also update portfolio dropdown
+                displayScenarios();
+                updateSelectionInfo();
+                
+                // Show scenario results
+                document.getElementById('scenarioResults').classList.remove('hidden');
+                document.getElementById('scenarioCount').textContent = data.scenarios.length;
+                
+                console.log(`✅ Loaded ${data.scenarios.length} scenarios`);
+            } catch (error) {
+                console.error('Failed to load scenarios:', error);
+            }
+        }
+
+        function populatePortfolioScenarioDropdown() {
+            const select = document.getElementById('portfolioScenarioSelect');
+            if (!select) return;
+            
+            select.innerHTML = '<option value="selected">Use Selected Scenarios from Tab 2</option>';
+            
+            generatedScenarios.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.scenario_id;
+                opt.textContent = `Scenario ${s.scenario_id}: ${s.severity} (VIX: ${s.preview.VIX.toFixed(1)})`;
+                select.appendChild(opt);
+            });
+        }
     </script>
 </body>
 </html>
