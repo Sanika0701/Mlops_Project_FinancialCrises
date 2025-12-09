@@ -945,7 +945,7 @@ jobs:
         run: |
           echo "📊 Creating monitoring baseline..."
           
-          python src/monitoring/model_monitor.py \
+          python src/monitoring/gcp_monitoring_setup.py \
             --models-dir models/best_models \
             --reference-data data/splits/train_data.csv \
             --logs-dir logs/monitoring
