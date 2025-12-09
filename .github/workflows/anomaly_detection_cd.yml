@@ -1,3 +1,536 @@
+# name: Anomaly Detection - Continuous Deployment
+
+# on:
+#   push:
+#     branches:
+#       - main
+#       - sush_new
+#     paths:
+#       - "src/eda/eda.py"
+#       - "src/labeling/**"
+#       - "src/models/train_anomaly_detection.py"
+#       - "configs/**"
+#   workflow_dispatch:
+
+# env:
+#   PYTHON_VERSION: "3.10"
+#   GCP_BUCKET: "mlops-financial-stress-data"
+#   GCP_PROJECT: "ninth-iris-422916-f2"
+
+# jobs:
+#   run-tests:
+#     runs-on: ubuntu-latest
+    
+#     steps:
+#       - uses: actions/checkout@v4
+      
+#       - uses: actions/setup-python@v4
+#         with:
+#           python-version: ${{ env.PYTHON_VERSION }}
+
+#       - name: Free disk space
+#         run: |
+#           sudo rm -rf /usr/share/dotnet
+#           sudo rm -rf /usr/local/lib/android
+#           sudo rm -rf /opt/ghc
+
+#       - name: Install dependencies
+#         run: |
+#           pip install --upgrade pip
+#           pip install -r requirements.txt
+#           pip install pytest
+      
+#       - name: Run tests
+#         run: |
+#           if [ -d "tests" ]; then
+#             pytest tests/ -k "anomaly" || echo "No anomaly tests found"
+#           else
+#             echo "No tests directory found - skipping"
+#           fi
+#         continue-on-error: true
+
+#   # Complete data pipeline: EDA → Thresholds → Snorkel Labeling
+#   run-data-pipeline:
+#     runs-on: ubuntu-latest
+#     needs: [run-tests]
+    
+#     steps:
+#       - uses: actions/checkout@v4
+      
+#       - uses: actions/setup-python@v4
+#         with:
+#           python-version: ${{ env.PYTHON_VERSION }}
+      
+#       - name: Authenticate to Google Cloud
+#         uses: google-github-actions/auth@v2
+#         with:
+#           credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+#       - name: Set up Cloud SDK
+#         uses: google-github-actions/setup-gcloud@v2
+      
+#       - name: Free disk space
+#         run: |
+#           sudo rm -rf /usr/share/dotnet
+#           sudo rm -rf /usr/local/lib/android
+#           sudo rm -rf /opt/ghc
+
+#       - name: Install dependencies
+#         run: |
+#           pip install --upgrade pip
+#           pip install -r requirements.txt
+      
+#       # STEP 1: Download features_engineered.csv from GCS
+#       - name: Step 1 - Download features_engineered.csv
+#         run: |
+#           echo "📥 STEP 1: Downloading features_engineered.csv from GCS..."
+#           mkdir -p data/processed data/eda data/labeled
+          
+#           gsutil cp gs://${{ env.GCP_BUCKET }}/data/processed/features_engineered.csv data/processed/ || {
+#             echo "❌ features_engineered.csv not found in GCS"
+#             exit 1
+#           }
+          
+#           echo "✅ features_engineered.csv downloaded"
+#           ls -lh data/processed/features_engineered.csv
+      
+#       # STEP 2: Run EDA
+#       - name: Step 2 - Run EDA analysis
+#         run: |
+#           echo "📊 STEP 2: Running EDA analysis..."
+          
+#           if [ -f "src/eda/eda.py" ]; then
+#             python src/eda/eda.py
+#             echo "✅ EDA completed"
+            
+#             # Check outputs
+#             if [ -d "outputs/eda" ]; then
+#               echo "EDA outputs created:"
+#               find outputs/eda -type f -name "*.png" -o -name "*.csv" -o -name "*.txt" | head -10
+#             fi
+#           else
+#             echo "❌ EDA script not found at src/eda/eda.py"
+#             exit 1
+#           fi
+      
+#       # STEP 3: Extract Auto Thresholds
+#       - name: Step 3 - Extract auto thresholds
+#         run: |
+#           echo "🎯 STEP 3: Extracting auto thresholds..."
+          
+#           if [ -f "src/labeling/auto_threshold_extractor.py" ]; then
+#             python src/labeling/auto_threshold_extractor.py
+#             echo "✅ Auto threshold extraction completed"
+            
+#             # Check threshold outputs
+#             if [ -f "outputs/snorkel/data/extracted_thresholds.json" ]; then
+#               echo "Thresholds extracted:"
+#               ls -lh outputs/snorkel/data/extracted_thresholds.*
+#             fi
+#           else
+#             echo "❌ Auto threshold script not found"
+#             exit 1
+#           fi
+      
+#       # STEP 4: Run Snorkel Labeling
+#       - name: Step 4 - Run Snorkel labeling pipeline
+#         run: |
+#           echo "🏷️  STEP 4: Running Snorkel labeling pipeline..."
+          
+#           if [ -f "src/labeling/snorkel_pipeline.py" ]; then
+#             python src/labeling/snorkel_pipeline.py
+#             echo "✅ Snorkel labeling completed"
+            
+#             # Verify labeled data
+#             if [ -f "outputs/snorkel/data/snorkel_labeled_only.csv" ]; then
+#               echo "✅ snorkel_labeled_only.csv created:"
+#               ls -lh outputs/snorkel/data/snorkel_labeled_only.csv
+#               echo ""
+#               echo "Data preview:"
+#               head -n 5 outputs/snorkel/data/snorkel_labeled_only.csv
+#             else
+#               echo "❌ snorkel_labeled_only.csv not found"
+#               exit 1
+#             fi
+#           else
+#             echo "❌ Snorkel pipeline script not found"
+#             exit 1
+#           fi
+      
+#       # Note: EDA and Snorkel scripts handle their own GCS uploads
+#       - name: Verify pipeline outputs uploaded
+#         run: |
+#           echo "ℹ️  EDA and Snorkel scripts handle their own GCS uploads"
+#           echo "✅ Pipeline outputs saved to GCS by scripts"
+      
+#       # Upload labeled data as artifact for next job
+#       - name: Upload labeled data as artifact
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: labeled-data
+#           path: outputs/snorkel/data/snorkel_labeled_only.csv
+#           retention-days: 7
+
+#   # Train anomaly detection models
+#   train-anomaly-models:
+#     runs-on: ubuntu-latest
+#     needs: [run-tests, run-data-pipeline]
+    
+#     steps:
+#       - uses: actions/checkout@v4
+      
+#       - uses: actions/setup-python@v4
+#         with:
+#           python-version: ${{ env.PYTHON_VERSION }}
+      
+#       - name: Authenticate to Google Cloud
+#         uses: google-github-actions/auth@v2
+#         with:
+#           credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+#       - name: Set up Cloud SDK
+#         uses: google-github-actions/setup-gcloud@v2
+      
+#       - name: Free disk space
+#         run: |
+#           sudo rm -rf /usr/share/dotnet
+#           sudo rm -rf /usr/local/lib/android
+#           sudo rm -rf /opt/ghc
+          
+#       - name: Install dependencies
+#         run: |
+#           pip install --upgrade pip
+#           pip install -r requirements.txt
+      
+#       # Download labeled data from previous job
+#       - name: Download labeled data artifact
+#         uses: actions/download-artifact@v4
+#         with:
+#           name: labeled-data
+#           path: outputs/snorkel/data
+#         continue-on-error: true
+      
+#       # Fallback: Download from GCS if artifact fails
+#       - name: Fallback - Download labeled data from GCS
+#         run: |
+#           if [ ! -f "outputs/snorkel/data/snorkel_labeled_only.csv" ]; then
+#             echo "📥 Downloading labeled data from GCS..."
+#             mkdir -p outputs/snorkel/data
+            
+#             # Download the specific file needed for training
+#             gsutil cp gs://${{ env.GCP_BUCKET }}/outputs/snorkel/data/snorkel_labeled_only.csv outputs/snorkel/data/ || {
+#               echo "❌ snorkel_labeled_only.csv not found in GCS"
+#               exit 1
+#             }
+#             echo "✅ Labeled data downloaded from GCS"
+#           fi
+      
+#       - name: Verify labeled data
+#         id: check_data
+#         run: |
+#           if [ -f "outputs/snorkel/data/snorkel_labeled_only.csv" ]; then
+#             echo "data_exists=true" >> $GITHUB_OUTPUT
+#             echo "✅ Labeled data verified (snorkel_labeled_only.csv)"
+#             ls -lh outputs/snorkel/data/
+#             echo ""
+#             echo "Sample data:"
+#             head -n 3 outputs/snorkel/data/snorkel_labeled_only.csv
+#           else
+#             echo "data_exists=false" >> $GITHUB_OUTPUT
+#             echo "❌ snorkel_labeled_only.csv not found"
+#             exit 1
+#           fi
+      
+#       # Create output directories
+#       - name: Create output directories
+#         if: steps.check_data.outputs.data_exists == 'true'
+#         run: |
+#           mkdir -p outputs/models/{results,plots,reports}
+#           mkdir -p models/anomaly_detection
+#           mkdir -p logs
+#           echo "✅ Output directories created"
+      
+#       # STEP 5: Train all anomaly detection models
+#       - name: Step 5 - Train anomaly detection models
+#         if: steps.check_data.outputs.data_exists == 'true'
+#         run: |
+#           echo "🤖 STEP 5: Training anomaly detection models..."
+#           echo ""
+#           echo "Models to train:"
+#           echo "  - Isolation Forest"
+#           echo "  - Local Outlier Factor (LOF)"
+#           echo "  - One-Class SVM"
+#           echo "  - DBSCAN (if enabled)"
+#           echo ""
+#           echo "ℹ️  Training script will:"
+#           echo "  1. Train all 3 models"
+#           echo "  2. Select best model"
+#           echo "  3. Upload ONLY best model to GCS"
+#           echo ""
+          
+#           # Run complete training pipeline
+#           python src/models/train_anomaly_detection.py
+          
+#           echo ""
+#           echo "✅ Model training completed"
+#         env:
+#           MLFLOW_TRACKING_URI: "file:./mlruns"
+      
+#       - name: Check training results
+#         if: steps.check_data.outputs.data_exists == 'true'
+#         run: |
+#           echo "📊 Checking Training Results..."
+#           echo ""
+          
+#           # Check local models (all 3 models saved locally for comparison)
+#           if [ -d "models/anomaly_detection" ]; then
+#             echo "✅ Models trained locally (for analysis):"
+#             find models/anomaly_detection -name "*.pkl" -type f | while read model; do
+#               echo "  - $model ($(du -h "$model" | cut -f1))"
+#             done
+#             echo ""
+#             echo "ℹ️  Note: Training script uploaded ONLY best model to GCS"
+#             echo ""
+#           else
+#             echo "⚠️  No models directory found"
+#           fi
+          
+#           # Check reports
+#           if [ -f "outputs/models/reports/comprehensive_training_report.txt" ]; then
+#             echo "✅ Training report generated"
+#             echo ""
+#             echo "=== BEST MODEL INFO ==="
+#             grep -A 8 "BEST MODEL SELECTED" outputs/models/reports/comprehensive_training_report.txt || echo "Section not found"
+#             echo ""
+#           else
+#             echo "⚠️  Training report not found"
+#           fi
+          
+#           # Check visualizations
+#           if [ -f "outputs/models/plots/sensitivity_analysis.png" ]; then
+#             echo "✅ Sensitivity analysis plot created"
+#           fi
+          
+#           if [ -f "outputs/models/plots/model_comparison.png" ]; then
+#             echo "✅ Model comparison plot created"
+#           fi
+#         continue-on-error: true
+      
+#       # Upload ONLY analysis outputs (training script already uploaded best model)
+#       - name: Upload analysis outputs to GCS
+#         if: steps.check_data.outputs.data_exists == 'true'
+#         run: |
+#           echo "📤 Uploading analysis outputs to GCS..."
+#           echo ""
+#           echo "ℹ️  Skipping model upload - training script already uploaded best model"
+#           echo ""
+          
+#           # Upload analysis outputs (plots, reports, results)
+#           if [ -d "outputs/models" ]; then
+#             echo "Uploading analysis to gs://${{ env.GCP_BUCKET }}/data/anomaly_reports/..."
+#             gsutil -m rsync -r outputs/models/plots/ gs://${{ env.GCP_BUCKET }}/data/anomaly_reports/plots/
+#             gsutil -m rsync -r outputs/models/results/ gs://${{ env.GCP_BUCKET }}/data/anomaly_reports/results/
+#             gsutil -m rsync -r outputs/models/reports/ gs://${{ env.GCP_BUCKET }}/data/anomaly_reports/reports/
+#             echo "✅ Analysis outputs uploaded to existing data/anomaly_reports/ folder"
+#             echo ""
+#           fi
+          
+#           # Upload MLflow logs
+#           if [ -d "mlruns" ]; then
+#             echo "Uploading MLflow logs to gs://${{ env.GCP_BUCKET }}/mlruns/..."
+#             gsutil -m rsync -r mlruns/ gs://${{ env.GCP_BUCKET }}/mlruns/
+#             echo "✅ MLflow logs uploaded to existing mlruns/ folder"
+#             echo ""
+#           fi
+          
+#           echo "=========================================="
+#           echo "✅ All outputs uploaded to existing GCS folders!"
+#           echo "=========================================="
+#           echo ""
+#           echo "GCS Locations (using existing folders):"
+#           echo "  Best Model:  gs://${{ env.GCP_BUCKET }}/models/anomaly_detection/"
+#           echo "  Analysis:    gs://${{ env.GCP_BUCKET }}/data/anomaly_reports/"
+#           echo "  MLflow:      gs://${{ env.GCP_BUCKET }}/mlruns/"
+#         continue-on-error: true
+      
+#       - name: Upload training artifacts to GitHub
+#         if: steps.check_data.outputs.data_exists == 'true'
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: training-report
+#           path: outputs/models/reports/comprehensive_training_report.txt
+#           retention-days: 7
+#         continue-on-error: true
+
+#   # Validate model deployment readiness
+#   validate-deployment:
+#     runs-on: ubuntu-latest
+#     needs: [train-anomaly-models]
+#     if: always()
+    
+#     steps:
+#       - uses: actions/checkout@v4
+      
+#       - name: Authenticate to Google Cloud
+#         uses: google-github-actions/auth@v2
+#         with:
+#           credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+#       - name: Set up Cloud SDK
+#         uses: google-github-actions/setup-gcloud@v2
+      
+#       - name: Check best model in GCS
+#         run: |
+#           echo "🔍 Checking Best Model in GCS..."
+#           echo ""
+          
+#           # Check for best model files
+#           if gsutil ls gs://${{ env.GCP_BUCKET }}/models/anomaly_detection/model.pkl > /dev/null 2>&1; then
+#             echo "✅ Best model found in GCS!"
+#             echo ""
+#             echo "Model files:"
+#             gsutil ls -lh gs://${{ env.GCP_BUCKET }}/models/anomaly_detection/*.pkl
+#             gsutil ls -lh gs://${{ env.GCP_BUCKET }}/models/anomaly_detection/*.json
+#             echo ""
+            
+#             # Show metadata
+#             if gsutil ls gs://${{ env.GCP_BUCKET }}/models/anomaly_detection/model_metadata.json > /dev/null 2>&1; then
+#               echo "Model Metadata:"
+#               gsutil cat gs://${{ env.GCP_BUCKET }}/models/anomaly_detection/model_metadata.json
+#               echo ""
+#             fi
+            
+#             echo "✅ Model is READY for deployment"
+#           else
+#             echo "❌ Best model not found in GCS"
+#             echo "❌ Model is NOT ready for deployment"
+#           fi
+#         continue-on-error: true
+      
+#       - name: Check analysis outputs in GCS
+#         run: |
+#           echo ""
+#           echo "📊 Checking Analysis Outputs in GCS..."
+#           echo ""
+          
+#           # Check anomaly_reports folder
+#           if gsutil ls gs://${{ env.GCP_BUCKET }}/data/anomaly_reports/ > /dev/null 2>&1; then
+#             echo "✅ Analysis outputs directory exists"
+#             echo ""
+            
+#             # Count files
+#             PLOT_COUNT=$(gsutil ls gs://${{ env.GCP_BUCKET }}/data/anomaly_reports/plots/*.png 2>/dev/null | wc -l)
+#             RESULT_COUNT=$(gsutil ls gs://${{ env.GCP_BUCKET }}/data/anomaly_reports/results/*.csv 2>/dev/null | wc -l)
+#             REPORT_COUNT=$(gsutil ls gs://${{ env.GCP_BUCKET }}/data/anomaly_reports/reports/*.txt 2>/dev/null | wc -l)
+            
+#             echo "Available outputs:"
+#             echo "  Plots:   $PLOT_COUNT files"
+#             echo "  Results: $RESULT_COUNT files"
+#             echo "  Reports: $REPORT_COUNT files"
+#           else
+#             echo "⚠️  Analysis outputs not found"
+#           fi
+#         continue-on-error: true
+
+#   # Pipeline summary
+#   pipeline-summary:
+#     runs-on: ubuntu-latest
+#     needs: [run-tests, run-data-pipeline, train-anomaly-models, validate-deployment]
+#     if: always()
+    
+#     steps:
+#       - name: Display comprehensive pipeline summary
+#         run: |
+#           echo "=========================================="
+#           echo "ANOMALY DETECTION CD PIPELINE SUMMARY"
+#           echo "=========================================="
+#           echo ""
+#           echo "Pipeline Execution Status:"
+#           echo "  Tests:              ${{ needs.run-tests.result }}"
+#           echo "  Data Pipeline:      ${{ needs.run-data-pipeline.result }}"
+#           echo "  Model Training:     ${{ needs.train-anomaly-models.result }}"
+#           echo "  Deployment Check:   ${{ needs.validate-deployment.result }}"
+#           echo ""
+          
+#           if [ "${{ needs.train-anomaly-models.result }}" == "success" ]; then
+#             echo "✅ =========================================="
+#             echo "✅ PIPELINE COMPLETED SUCCESSFULLY!"
+#             echo "✅ =========================================="
+#             echo ""
+#             echo "📊 Complete Pipeline Executed:"
+#             echo ""
+#             echo "  Step 1: ✅ Downloaded features_engineered.csv"
+#             echo "  Step 2: ✅ Ran EDA analysis"
+#             echo "  Step 3: ✅ Extracted auto thresholds"
+#             echo "  Step 4: ✅ Generated Snorkel labels"
+#             echo "  Step 5: ✅ Trained & selected best anomaly detection model"
+#             echo ""
+#             echo "🎯 Models Trained (All 3 Compared):"
+#             echo "  ✓ Isolation Forest"
+#             echo "  ✓ Local Outlier Factor (LOF)"
+#             echo "  ✓ One-Class SVM"
+#             echo ""
+#             echo "🏆 Best Model:"
+#             echo "  - Selected based on ROC-AUC performance"
+#             echo "  - Uploaded to GCS for deployment"
+#             echo "  - Only best model saved (no subfolders)"
+#             echo ""
+#             echo "📈 Analysis Completed:"
+#             echo "  ✓ Hyperparameter sensitivity analysis"
+#             echo "  ✓ Bias detection (sector slicing)"
+#             echo "  ✓ SHAP feature importance"
+#             echo "  ✓ Model comparison and selection"
+#             echo ""
+#             echo "📦 Files in GCS (Using Existing Folders):"
+#             echo ""
+#             echo "  gs://mlops-financial-stress-data/"
+#             echo "  ├── data/"
+#             echo "  │   ├── processed/features_engineered.csv  (input)"
+#             echo "  │   └── anomaly_reports/                   (analysis outputs)"
+#             echo "  │       ├── plots/                         (visualizations)"
+#             echo "  │       ├── results/                       (metrics CSVs)"
+#             echo "  │       └── reports/                       (text reports)"
+#             echo "  ├── models/"
+#             echo "  │   └── anomaly_detection/                 (BEST model only)"
+#             echo "  │       ├── model.pkl                      ← Dashboard uses this"
+#             echo "  │       ├── scaler.pkl"
+#             echo "  │       ├── features.json"
+#             echo "  │       └── model_metadata.json            (which model won)"
+#             echo "  └── mlruns/                                (MLflow logs)"
+#             echo ""
+#             echo "🔗 Quick Access Commands:"
+#             echo "  View best model:     gsutil ls gs://mlops-financial-stress-data/models/anomaly_detection/"
+#             echo "  Check which model:   gsutil cat gs://mlops-financial-stress-data/models/anomaly_detection/model_metadata.json"
+#             echo "  View training report: gsutil cat gs://mlops-financial-stress-data/data/anomaly_reports/reports/comprehensive_training_report.txt"
+#             echo "  Download all plots:  gsutil -m cp -r gs://mlops-financial-stress-data/data/anomaly_reports/plots/ ./plots/"
+#             echo ""
+#             echo "=========================================="
+#             echo "✅ READY FOR DEPLOYMENT!"
+#             echo "=========================================="
+#           else
+#             echo "⚠️  =========================================="
+#             echo "⚠️  PIPELINE COMPLETED WITH ISSUES"
+#             echo "⚠️  =========================================="
+#             echo ""
+#             echo "Check individual job logs for details:"
+#             echo "  - Data Pipeline: ${{ needs.run-data-pipeline.result }}"
+#             echo "  - Model Training: ${{ needs.train-anomaly-models.result }}"
+#             echo "  - Deployment Check: ${{ needs.validate-deployment.result }}"
+#             echo ""
+#             echo "Review the workflow run for error messages"
+#           fi
+#           echo ""
+      
+#       - name: Set status annotations
+#         run: |
+#           if [ "${{ needs.train-anomaly-models.result }}" == "success" ]; then
+#             echo "::notice title=Pipeline Complete::Anomaly detection pipeline executed successfully"
+#             echo "::notice title=Best Model Ready::Best model uploaded to gs://mlops-financial-stress-data/models/anomaly_detection/"
+#             echo "::notice title=No New Folders::All outputs saved to existing GCS folders"
+#           else
+#             echo "::warning title=Pipeline Issues::Check individual job logs for details"
+#           fi
+
 name: Anomaly Detection - Continuous Deployment
 
 on:
@@ -27,12 +560,21 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'  # Enable pip caching
 
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
@@ -60,6 +602,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
       
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -74,6 +617,14 @@ jobs:
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
@@ -182,6 +733,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
       
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -196,6 +748,14 @@ jobs:
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
+          
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
           
       - name: Install dependencies
         run: |
