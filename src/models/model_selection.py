@@ -414,10 +414,14 @@ def save_selection_report(best_model, metrics, output_dir='outputs/model_selecti
     
     # Also save as JSON
     json_path = f'{output_dir}/model_selection.json'
+    
+    # Create a JSON-serializable copy of metrics (remove model_path)
+    metrics_for_json = {k: v for k, v in metrics.items() if k != 'model_path'}
+    
     with open(json_path, 'w') as f:
         json.dump({
             'selected_model': best_model,
-            'metrics': metrics,
+            'metrics': metrics_for_json,
             'timestamp': pd.Timestamp.now().isoformat(),
             'deployment_path': f"{GCS_DEPLOYMENT_PATH}best_model_deployment.pkl"
         }, f, indent=2)
