@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 ============================================================================
@@ -1181,6 +1180,81 @@ class ModelRegistryManager:
             json.dump({'features': feature_cols}, f)
         
         self.logger.info(f"✓ Saved model artifacts to: {model_dir}")
+    # ============================================================================
+# NEW: BEST MODEL GCS UPLOADER
+# ============================================================================
+
+class BestModelGCSUploader:
+    """Upload only the best model to GCS at models/anomaly_detection/"""
+    
+    def __init__(self, config: Config, logger: logging.Logger):
+        self.config = config
+        self.logger = logger
+    
+    def upload_best_model_only(
+        self, 
+        model_name: str, 
+        model_dir: Path,
+        metrics: Dict,
+        run_id: str
+    ):
+        """Upload best model to GCS at models/anomaly_detection/"""
+        self.logger.info("\n" + "="*80)
+        self.logger.info("UPLOADING BEST MODEL TO GCS")
+        self.logger.info("="*80)
+        
+        try:
+            from google.cloud import storage
+            
+            gcs_config = self.config['data']['gcs']
+            bucket_name = gcs_config['bucket']
+            
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            
+            # Fixed GCS path
+            gcs_base_path = "models/anomaly_detection"
+            
+            self.logger.info(f"Best model: {model_name}")
+            self.logger.info(f"Target: gs://{bucket_name}/{gcs_base_path}/")
+            
+            # Upload model artifacts
+            files_to_upload = {
+                'model.pkl': f"{gcs_base_path}/model.pkl",
+                'scaler.pkl': f"{gcs_base_path}/scaler.pkl",
+                'features.json': f"{gcs_base_path}/features.json"
+            }
+            
+            for local_file, gcs_path in files_to_upload.items():
+                local_path = model_dir / local_file
+                if local_path.exists():
+                    blob = bucket.blob(gcs_path)
+                    blob.upload_from_filename(str(local_path))
+                    self.logger.info(f"  ✓ {local_file} → gs://{bucket_name}/{gcs_path}")
+            
+            # Upload metadata
+            metadata = {
+                'model_name': model_name,
+                'upload_timestamp': datetime.now().isoformat(),
+                'mlflow_run_id': run_id,
+                'metrics': {k: float(v) if isinstance(v, (np.floating, np.integer)) else v 
+                           for k, v in metrics.items()},
+                'gcs_path': f"gs://{bucket_name}/{gcs_base_path}/"
+            }
+            
+            metadata_path = f"{gcs_base_path}/model_metadata.json"
+            blob = bucket.blob(metadata_path)
+            blob.upload_from_string(json.dumps(metadata, indent=2))
+            self.logger.info(f"  ✓ metadata → gs://{bucket_name}/{metadata_path}")
+            
+            self.logger.info(f"\n✓ Best model uploaded successfully!")
+            self.logger.info(f"  Access at: gs://{bucket_name}/{gcs_base_path}/")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to upload to GCS: {e}")
+            return False
 
 
 # ============================================================================
@@ -1610,39 +1684,39 @@ def main():
     logger.info("="*80)
     
     # ========================================================================
-    # STEP 13: UPLOAD OUTPUTS TO GCS (NEW)
+    # STEP 13: UPLOAD BEST MODEL TO GCS
     # ========================================================================
     
     if config['output'].get('upload_to_gcs', False):
         logger.info("\n" + "="*80)
-        logger.info("STEP 13: UPLOADING OUTPUTS TO GCS")
+        logger.info("STEP 13: UPLOADING BEST MODEL TO GCS")
         logger.info("="*80)
         
-        from src.utils.gcs_data_loader import GCSOutputUploader
-        uploader = GCSOutputUploader(config.cfg, logger)
+        # Initialize best model uploader
+        best_model_uploader = BestModelGCSUploader(config, logger)
         
-        # Upload all trained models
-        logger.info("\nUploading trained models...")
-        for model_name in results.keys():
-            if model_name != 'Weighted_Ensemble':
-                model_dir = Path(config['output']['models_dir']) / model_name
-                if model_dir.exists():
-                    uploader.upload_model_artifacts(model_name, str(model_dir))
+        # Upload only the best model
+        best_model_dir = Path(config['output']['models_dir']) / best_model_name
         
-        # Upload ensemble model
-        logger.info("\nUploading ensemble model...")
-        ensemble_dir = Path(config['output']['models_dir']) / "Ensemble"
-        if ensemble_dir.exists():
-            uploader.upload_ensemble(str(ensemble_dir))
+        if best_model_dir.exists():
+            upload_success = best_model_uploader.upload_best_model_only(
+                model_name=best_model_name,
+                model_dir=best_model_dir,
+                metrics=best_result['metrics'],
+                run_id=best_result['run_id']
+            )
+            
+            if upload_success:
+                logger.info(f"✓ Best model ({best_model_name}) uploaded to GCS")
+                logger.info(f"  Path: gs://{config['data']['gcs']['bucket']}/models/anomaly_detection/")
+            else:
+                logger.warning("⚠️  Failed to upload best model to GCS")
+        else:
+            logger.error(f"Model directory not found: {best_model_dir}")
         
-        # Upload all outputs (plots, reports, results)
-        logger.info("\nUploading visualizations and reports...")
-        uploader.upload_outputs()
         
-        # Upload labeled data from Snorkel
-        logger.info("\nUploading Snorkel labeled data...")
-        labeled_path = config['data']['local']['labeled_data_path']
-        uploader.upload_labeled_data(labeled_path)
+    
+        
         
         logger.info("\n All outputs uploaded to GCS!")
         logger.info(f"   Bucket: gs://{config['data']['gcs']['bucket']}/")
