@@ -457,6 +457,15 @@ jobs:
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
           df -h
       
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-minimal-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-minimal-
+            ${{ runner.os }}-pip-    
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
