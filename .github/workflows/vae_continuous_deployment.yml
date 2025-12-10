@@ -140,38 +140,40 @@ jobs:
           fi
       
       - name: Train Dense VAE Optimized
-          if: steps.check_data.outputs.data_exists == 'true'
-          run: |
-            echo "🚀 Training Dense VAE Optimized..."
-            python src/models/Dense_VAE_optimized_mlflow_updated.py
-            echo "✅ Dense VAE training complete"
-          env:
-            MLFLOW_TRACKING_URI: "file:./mlruns"
-          continue-on-error: false
-          timeout-minutes: 60
-
+        if: steps.check_data.outputs.data_exists == 'true'
+        run: |
+          echo "🚀 Training Dense VAE Optimized..."
+          python src/models/Dense_VAE_optimized_mlflow_updated.py
+          echo "✅ Dense VAE training complete"
+        env:
+          MLFLOW_TRACKING_URI: "file:./mlruns"
+        continue-on-error: false
+        timeout-minutes: 60
+      
       - name: Train Ensemble VAE
-          if: steps.check_data.outputs.data_exists == 'true'
-          run: |
-            echo "🚀 Training Ensemble VAE..."
-            python src/models/Ensemble_VAE_updated.py
-            echo "✅ Ensemble VAE training complete"
-          env:
-            MLFLOW_TRACKING_URI: "file:./mlruns"
-          continue-on-error: false
-          timeout-minutes: 60
-
+        if: steps.check_data.outputs.data_exists == 'true'
+        run: |
+          echo "🚀 Training Ensemble VAE..."
+          python src/models/Ensemble_VAE_updated.py
+          echo "✅ Ensemble VAE training complete"
+        env:
+          MLFLOW_TRACKING_URI: "file:./mlruns"
+        continue-on-error: false
+        timeout-minutes: 60
+      
       - name: Upload MLflow logs to GCS
-          if: steps.check_data.outputs.data_exists == 'true'
-          run: |
-            echo "📤 Uploading MLflow logs to GCS..."
-            
-            if [ -d "mlruns" ]; then
-              gsutil -m rsync -r mlruns/ gs://${{ env.GCP_BUCKET }}/mlruns/vae/
-              echo "✅ MLflow logs uploaded to gs://${{ env.GCP_BUCKET }}/mlruns/vae/"
-            else
-              echo "⚠️ No mlruns directory found"
-            fi
+        if: steps.check_data.outputs.data_exists == 'true'
+        run: |
+          echo "📤 Uploading MLflow logs to GCS..."
+          gcloud config set project ${{ env.GCP_PROJECT }}
+          
+          if [ -d "mlruns" ]; then
+            gsutil -m rsync -r mlruns/ gs://${{ env.GCP_BUCKET }}/mlruns/vae/
+            echo "✅ MLflow logs uploaded to gs://${{ env.GCP_BUCKET }}/mlruns/vae/"
+          else
+            echo "⚠️ No mlruns directory found - MLflow may not have run"
+          fi
+        continue-on-error: true
       
       - name: Download trained models from GCS
         if: steps.check_data.outputs.data_exists == 'true'
@@ -179,19 +181,17 @@ jobs:
           echo "📥 Downloading trained models from GCS..."
           gcloud config set project ${{ env.GCP_PROJECT }}
           
-          # Create local output directories matching Python script structure
           mkdir -p outputs/output_Dense_VAE_optimized
           mkdir -p outputs/output_Ensemble_VAE
           
-          # Download Dense VAE outputs
           echo "Downloading Dense VAE outputs..."
           gsutil -m cp gs://${{ env.GCP_BUCKET }}/models/vae/outputs/output_Dense_VAE_optimized/* outputs/output_Dense_VAE_optimized/ || echo "Some Dense VAE files not found"
           
-          # Download Ensemble VAE outputs
           echo "Downloading Ensemble VAE outputs..."
           gsutil -m cp gs://${{ env.GCP_BUCKET }}/models/vae/outputs/output_Ensemble_VAE/* outputs/output_Ensemble_VAE/ || echo "Some Ensemble VAE files not found"
           
           echo "✅ Model outputs downloaded"
+    
       
       - name: Check training outputs
         if: steps.check_data.outputs.data_exists == 'true'
