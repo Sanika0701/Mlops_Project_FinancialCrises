@@ -721,10 +721,13 @@ jobs:
         if: always()
         run: |
           echo "📤 Uploading monitoring logs..."
+          mkdir -p logs/monitoring
           
           if [ -d "logs/monitoring" ]; then
             gsutil -m cp logs/monitoring/*.json gs://${{ env.GCP_BUCKET }}/logs/monitoring/
             echo "✅ Logs uploaded"
+          else
+            echo "⚠️  No logs directory found"
           fi
         continue-on-error: true
       
@@ -951,13 +954,6 @@ jobs:
             --logs-dir logs/monitoring
           
           echo "✅ Baseline created"
-      
-      - name: Upload baseline to GCS
-        run: |
-          gsutil cp logs/monitoring/monitoring_report_latest.json \
-            gs://${{ env.GCP_BUCKET }}/logs/monitoring/baseline.json
-          
-          echo "✅ Monitoring baseline uploaded"
 
   pipeline-summary:
     runs-on: ubuntu-latest
