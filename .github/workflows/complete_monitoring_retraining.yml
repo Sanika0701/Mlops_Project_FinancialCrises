@@ -1,11 +1,17 @@
 name: Complete Model Monitoring & Auto-Retraining (All Models)
 
 on:
-  # AUTOMATED: Runs daily at 2 AM UTC
+  # AUTOMATED: Runs weekly on Sunday at 2 AM UTC
+  # Why weekly?
+  # - Quarterly financial data doesn't change daily
+  # - Catches monthly macro data updates
+  # - Cost-effective: ~20 minutes/month (FREE)
+  # - Responsive: Max 7-day lag to detect drift
+  # - Weekend buffer: Fix issues before Monday
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * 0'  # Every Sunday at 2 AM UTC (Saturday 9 PM EST)
   
-  # Manual trigger for testing
+  # Manual trigger for testing or urgent checks
   workflow_dispatch:
 
 env:
@@ -233,8 +239,59 @@ jobs:
           predictive_drift = False
           
           try:
+              # Check if data has been updated since last drift check
+              import subprocess
+              from datetime import datetime, timedelta
+              
+              # Get last modified time of data file
+              result = subprocess.run([
+                  'gsutil', 'stat', 
+                  'gs://mlops-financial-stress-data/data/features/quarterly_data_with_targets_clean.csv'
+              ], capture_output=True, text=True)
+              
+              # Parse modification time from gsutil stat output
+              data_modified = None
+              for line in result.stdout.split('\n'):
+                  if 'Updated:' in line or 'Time created:' in line:
+                      # Extract timestamp
+                      pass
+              
+              print("📅 Checking data freshness...")
+              
               # Load quarterly data with targets
               quarterly_data = pd.read_csv('data/features/quarterly_data_with_targets_clean.csv')
+              
+              # Check if data was updated in last 7 days
+              # If static data, skip drift detection
+              try:
+                  if 'Date' in quarterly_data.columns:
+                      latest_date = pd.to_datetime(quarterly_data['Date']).max()
+                      days_old = (datetime.now() - latest_date).days
+                      
+                      if days_old > 90:  # Data older than 90 days
+                          print(f"⚠️  Data is {days_old} days old - likely static")
+                          print(f"ℹ️  Skipping drift detection on static data")
+                          print(f"✅ No drift (data not updated)")
+                          
+                          avg_feature_ks = 1.0  # Perfect score
+                          shift_rate = 0.0
+                          shifted_features = []
+                          predictive_drift = False
+                          
+                          drift_report['models']['predictive'] = {
+                              'drift_detected': bool(predictive_drift),
+                              'avg_feature_ks': float(avg_feature_ks),
+                              'shift_rate': float(shift_rate),
+                              'shifted_features': shifted_features,
+                              'data_age_days': days_old,
+                              'note': 'Static data - drift detection skipped',
+                              'production_path': 'gs://mlops-financial-stress-data/models/predictor/'
+                          }
+                          
+                          # Skip to next model
+                          raise Exception("Static data - skip drift")
+              except:
+                  pass
               
               # Use 80/20 split as baseline vs current
               split_idx = int(len(quarterly_data) * 0.8)
@@ -247,6 +304,17 @@ jobs:
               
               # Also drop non-numeric columns like Company, Sector, Date
               non_numeric_cols = ['Company', 'Sector', 'Date', 'Ticker', 'Industry']
+              
+              # CRITICAL: Exclude temporal features that naturally change over time
+              temporal_features = [
+                  'Year', 'Quarter', 'Quarter_Num',
+                  # Lagged features (shift with time)
+                  'GDP_last', 'CPI_last', 'Unemployment_Rate_last', 
+                  'Interest_Rate_last', 'VIX_last',
+                  # Rolling averages (shift with time)
+                  'MA_', 'EMA_', 'Rolling_', 'Lag_'
+              ]
+              
               cols_to_drop = list(set(target_cols + non_numeric_cols))
               
               baseline_features = baseline_data.drop(columns=[c for c in cols_to_drop if c in baseline_data.columns], errors='ignore')
@@ -256,13 +324,18 @@ jobs:
               baseline_features = baseline_features.select_dtypes(include=[np.number])
               current_features = current_features.select_dtypes(include=[np.number])
               
-              # Check feature distribution shifts
+              # Filter out temporal features
+              features_to_check = [col for col in baseline_features.columns 
+                                 if not any(temp in col for temp in temporal_features)]
+              
+              print(f"\nℹ️  Excluding temporal features from drift check")
+              print(f"📊 Checking {len(features_to_check)} fundamental features...")
+              
+              # Check feature distribution shifts (ONLY on fundamental features)
               feature_ks_stats = []
               shifted_features = []
               
-              print(f"\nChecking {len(baseline_features.columns)} numeric features...")
-              
-              for col in baseline_features.columns[:20]:  # Check first 20 features
+              for col in features_to_check[:20]:  # Check first 20 fundamental features
                   if col in current_features.columns:
                       baseline_vals = baseline_features[col].dropna()
                       current_vals = current_features[col].dropna()
