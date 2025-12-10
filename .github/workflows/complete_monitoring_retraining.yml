@@ -93,9 +93,11 @@ jobs:
           gsutil cp gs://${{ env.GCP_BUCKET }}/data/features/macro_features_clean.csv \
                     data/features/macro_features_clean.csv || echo "⚠️ macro features not found"
           
-          # Reference data for Predictive models (quarterly data)
-          gsutil cp gs://${{ env.GCP_BUCKET }}/data/features/quarterly_data_with_targets_clean.csv \
-                    data/features/quarterly_data_with_targets_clean.csv || echo "⚠️ quarterly data not found"
+          # FIXED: Use the SAME test split that models were evaluated on
+          gsutil cp gs://${{ env.GCP_BUCKET }}/data/splits/train_data.csv \
+                    data/splits/train_data.csv || echo "⚠️ train data not found"
+          gsutil cp gs://${{ env.GCP_BUCKET }}/data/splits/test_data.csv \
+                    data/splits/test_data.csv || echo "⚠️ test data not found"
           
           # Reference data for Anomaly detection (labeled data)
           gsutil cp gs://${{ env.GCP_BUCKET }}/outputs/snorkel/data/snorkel_labeled_only.csv \
@@ -239,41 +241,27 @@ jobs:
           predictive_drift = False
           
           try:
-              # Check if data has been updated since last drift check
-              import subprocess
-              from datetime import datetime, timedelta
+              # FIXED: Use test split instead of recalculating 80/20
+              # Load the SAME data that model was evaluated on during training
+              test_data = pd.read_csv('data/splits/test_data.csv')
+              train_data = pd.read_csv('data/splits/train_data.csv')
               
-              # Get last modified time of data file
-              result = subprocess.run([
-                  'gsutil', 'stat', 
-                  'gs://mlops-financial-stress-data/data/features/quarterly_data_with_targets_clean.csv'
-              ], capture_output=True, text=True)
+              print(f"✅ Loaded training split: {len(train_data)} samples")
+              print(f"✅ Loaded test split: {len(test_data)} samples")
               
-              # Parse modification time from gsutil stat output
-              data_modified = None
-              for line in result.stdout.split('\n'):
-                  if 'Updated:' in line or 'Time created:' in line:
-                      # Extract timestamp
-                      pass
-              
-              print("📅 Checking data freshness...")
-              
-              # Load quarterly data with targets
-              quarterly_data = pd.read_csv('data/features/quarterly_data_with_targets_clean.csv')
-              
-              # Check if data was updated in last 7 days
-              # If static data, skip drift detection
+              # Check if test data was updated since training
+              # If static, skip drift detection
               try:
-                  if 'Date' in quarterly_data.columns:
-                      latest_date = pd.to_datetime(quarterly_data['Date']).max()
-                      days_old = (datetime.now() - latest_date).days
+                  if 'Date' in test_data.columns:
+                      latest_test_date = pd.to_datetime(test_data['Date']).max()
+                      latest_train_date = pd.to_datetime(train_data['Date']).max()
                       
-                      if days_old > 90:  # Data older than 90 days
-                          print(f"⚠️  Data is {days_old} days old - likely static")
-                          print(f"ℹ️  Skipping drift detection on static data")
-                          print(f"✅ No drift (data not updated)")
+                      # If test data is same as or older than train data → Static
+                      if latest_test_date <= latest_train_date:
+                          print(f"ℹ️  Test data is static (same as training data)")
+                          print(f"✅ No drift (data not updated since training)")
                           
-                          avg_feature_ks = 1.0  # Perfect score
+                          avg_feature_ks = 1.0
                           shift_rate = 0.0
                           shifted_features = []
                           predictive_drift = False
@@ -283,65 +271,58 @@ jobs:
                               'avg_feature_ks': float(avg_feature_ks),
                               'shift_rate': float(shift_rate),
                               'shifted_features': shifted_features,
-                              'data_age_days': days_old,
-                              'note': 'Static data - drift detection skipped',
+                              'note': 'Static test split - no new data',
                               'production_path': 'gs://mlops-financial-stress-data/models/predictor/'
                           }
                           
-                          # Skip to next model
+                          # Skip drift detection
                           raise Exception("Static data - skip drift")
               except:
                   pass
               
-              # Use 80/20 split as baseline vs current
-              split_idx = int(len(quarterly_data) * 0.8)
-              baseline_data = quarterly_data.iloc[:split_idx]
-              current_data = quarterly_data.iloc[split_idx:]
-              
+              # Compare train vs test distributions
               # Extract features (drop targets AND non-numeric columns)
-              target_cols = [c for c in quarterly_data.columns if c.startswith('target_') 
+              target_cols = [c for c in test_data.columns if c.startswith('target_') 
                            or c in ['Revenue', 'EPS', 'Debt_Equity', 'Profit_Margin', 'Stock_Return']]
               
-              # Also drop non-numeric columns like Company, Sector, Date
+              # Drop non-numeric columns
               non_numeric_cols = ['Company', 'Sector', 'Date', 'Ticker', 'Industry']
               
-              # CRITICAL: Exclude temporal features that naturally change over time
+              # Exclude temporal features
               temporal_features = [
                   'Year', 'Quarter', 'Quarter_Num',
-                  # Lagged features (shift with time)
                   'GDP_last', 'CPI_last', 'Unemployment_Rate_last', 
                   'Interest_Rate_last', 'VIX_last',
-                  # Rolling averages (shift with time)
                   'MA_', 'EMA_', 'Rolling_', 'Lag_'
               ]
               
               cols_to_drop = list(set(target_cols + non_numeric_cols))
               
-              baseline_features = baseline_data.drop(columns=[c for c in cols_to_drop if c in baseline_data.columns], errors='ignore')
-              current_features = current_data.drop(columns=[c for c in cols_to_drop if c in current_data.columns], errors='ignore')
+              train_features = train_data.drop(columns=[c for c in cols_to_drop if c in train_data.columns], errors='ignore')
+              test_features = test_data.drop(columns=[c for c in cols_to_drop if c in test_data.columns], errors='ignore')
               
               # Keep only numeric columns
-              baseline_features = baseline_features.select_dtypes(include=[np.number])
-              current_features = current_features.select_dtypes(include=[np.number])
+              train_features = train_features.select_dtypes(include=[np.number])
+              test_features = test_features.select_dtypes(include=[np.number])
               
               # Filter out temporal features
-              features_to_check = [col for col in baseline_features.columns 
+              features_to_check = [col for col in train_features.columns 
                                  if not any(temp in col for temp in temporal_features)]
               
               print(f"\nℹ️  Excluding temporal features from drift check")
               print(f"📊 Checking {len(features_to_check)} fundamental features...")
               
-              # Check feature distribution shifts (ONLY on fundamental features)
+              # Check feature distribution shifts (train vs test)
               feature_ks_stats = []
               shifted_features = []
               
-              for col in features_to_check[:20]:  # Check first 20 fundamental features
-                  if col in current_features.columns:
-                      baseline_vals = baseline_features[col].dropna()
-                      current_vals = current_features[col].dropna()
+              for col in features_to_check[:20]:
+                  if col in test_features.columns:
+                      train_vals = train_features[col].dropna()
+                      test_vals = test_features[col].dropna()
                       
-                      if len(baseline_vals) > 10 and len(current_vals) > 10:
-                          ks, _ = stats.ks_2samp(baseline_vals, current_vals)
+                      if len(train_vals) > 10 and len(test_vals) > 10:
+                          ks, _ = stats.ks_2samp(train_vals, test_vals)
                           feature_ks_stats.append(ks)
                           
                           if ks < 0.70:
