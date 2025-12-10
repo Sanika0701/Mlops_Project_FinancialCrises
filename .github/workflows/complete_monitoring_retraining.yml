@@ -565,15 +565,18 @@ jobs:
       - name: 📧 Send Email - Drift Alert
         if: steps.check.outputs.any_drift == 'true'
         uses: dawidd6/action-send-mail@v3
+        continue-on-error: true
         with:
           server_address: smtp.gmail.com
           server_port: 587
-          secure: true
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           subject: "🚨 Model Drift Detected - Auto-Retraining Started"
           to: ${{ env.NOTIFICATION_EMAIL }}
-          from: MLOps Financial Stress <${{ secrets.EMAIL_USERNAME }}>
+          from: ${{ secrets.EMAIL_USERNAME }}
+          content_type: text/plain
+          convert_markdown: false
+          priority: normal
           body: |
             🚨 MODEL DRIFT ALERT
             
@@ -949,15 +952,18 @@ jobs:
     steps:
       - name: 📧 Send Completion Email
         uses: dawidd6/action-send-mail@v3
+        continue-on-error: true
         with:
           server_address: smtp.gmail.com
           server_port: 587
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           subject: "📊 Model Monitoring Complete - $(date +%Y-%m-%d)"
-          to: ${{ secrets.NOTIFICATION_EMAIL }}
-          from: MLOps Financial Stress <${{ secrets.EMAIL_USERNAME }}>
-          secure: true
+          to: ${{ env.NOTIFICATION_EMAIL }}
+          from: ${{ secrets.EMAIL_USERNAME }}
+          content_type: text/plain
+          convert_markdown: false
+          priority: normal
           body: |
             📊 MODEL MONITORING & RETRAINING REPORT
             Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
