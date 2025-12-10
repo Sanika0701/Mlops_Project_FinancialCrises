@@ -140,22 +140,38 @@ jobs:
           fi
       
       - name: Train Dense VAE Optimized
-        if: steps.check_data.outputs.data_exists == 'true'
-        run: |
-          echo "🚀 Training Dense VAE Optimized..."
-          python src/models/Dense_VAE_optimized_mlflow_updated.py --no-mlflow
-          echo "✅ Dense VAE training complete"
-        continue-on-error: false
-        timeout-minutes: 60
-      
+          if: steps.check_data.outputs.data_exists == 'true'
+          run: |
+            echo "🚀 Training Dense VAE Optimized..."
+            python src/models/Dense_VAE_optimized_mlflow_updated.py
+            echo "✅ Dense VAE training complete"
+          env:
+            MLFLOW_TRACKING_URI: "file:./mlruns"
+          continue-on-error: false
+          timeout-minutes: 60
+
       - name: Train Ensemble VAE
-        if: steps.check_data.outputs.data_exists == 'true'
-        run: |
-          echo "🚀 Training Ensemble VAE..."
-          python src/models/Ensemble_VAE_updated.py --no-mlflow
-          echo "✅ Ensemble VAE training complete"
-        continue-on-error: false
-        timeout-minutes: 60
+          if: steps.check_data.outputs.data_exists == 'true'
+          run: |
+            echo "🚀 Training Ensemble VAE..."
+            python src/models/Ensemble_VAE_updated.py
+            echo "✅ Ensemble VAE training complete"
+          env:
+            MLFLOW_TRACKING_URI: "file:./mlruns"
+          continue-on-error: false
+          timeout-minutes: 60
+
+      - name: Upload MLflow logs to GCS
+          if: steps.check_data.outputs.data_exists == 'true'
+          run: |
+            echo "📤 Uploading MLflow logs to GCS..."
+            
+            if [ -d "mlruns" ]; then
+              gsutil -m rsync -r mlruns/ gs://${{ env.GCP_BUCKET }}/mlruns/vae/
+              echo "✅ MLflow logs uploaded to gs://${{ env.GCP_BUCKET }}/mlruns/vae/"
+            else
+              echo "⚠️ No mlruns directory found"
+            fi
       
       - name: Download trained models from GCS
         if: steps.check_data.outputs.data_exists == 'true'
